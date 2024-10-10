@@ -5,24 +5,6 @@ import (
 	"unicode"
 )
 
-// StripPrefix removes the given prefix from the given string if it exists.
-func StripPrefix(string string, prefix string) string {
-	if len(string) > len(prefix) && string[:len(prefix)] == prefix {
-		return string[len(prefix):]
-	}
-
-	return string
-}
-
-// StripSuffix removes the given suffix from the given string if it exists.
-func StripSuffix(string string, suffix string) string {
-	if len(string) > len(suffix) && string[len(string)-len(suffix):] == suffix {
-		return string[:len(string)-len(suffix)]
-	}
-
-	return string
-}
-
 // GetEquivalentWhiteSpace returns a string with only whitespace with the same
 // length as the given string
 func GetEquivalentWhiteSpace(string string) string {

@@ -2,6 +2,7 @@ package utils
 
 import "os"
 
+// WriteToFile writes the given content to the given file.
 func WriteToFile(filename, content string) error {
 	file, err := os.Create(filename)
 
