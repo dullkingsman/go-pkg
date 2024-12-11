@@ -331,6 +331,30 @@ ORDER BY
 		schema[table.Name] = table
 	}
 
+	if len(schema) == 0 {
+		utils.LogError("prizzle-table-info-extractor", "no tables found")
+		return schema, nil
+	} else {
+		utils.LogInfo("prizzle-table-info-extractor", "found tables:\n")
+
+		for _, table := range schema {
+			var columnList = ""
+			var first = true
+
+			for _, column := range table.Columns {
+				if !first {
+					columnList += ", "
+				} else {
+					first = false
+				}
+
+				columnList += utils.GreyString(column.Name)
+			}
+
+			utils.LogInfo("prizzle-table-info-extractor", utils.GreyString(table.Name)+" with columns: "+columnList+"\n")
+		}
+	}
+
 	utils.LogSuccess("prizzle-table-info-extractor", "got tables info")
 
 	return schema, nil
