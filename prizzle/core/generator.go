@@ -270,39 +270,37 @@ ORDER BY
 
 	if driver == "sqlite3" {
 		query = `WITH column_info AS (
-    SELECT 
+    SELECT
         m.name AS table_name,
         p.name AS column_name,
         p.type AS data_type,
         p.[notnull] = 0 AS nullable,
         FALSE AS is_enum -- SQLite does not support enums
-    FROM 
+    FROM
         sqlite_master m
-    JOIN 
+            JOIN
         pragma_table_info(m.name) p
-    ON 
-        m.type = 'table'
-    WHERE 
+        ON
+            m.type = 'table'
+    WHERE
         m.name NOT LIKE 'sqlite_%' -- Exclude SQLite internal tables
-        AND m.name NOT IN ('pg_stat_statements', '_prisma_migrations', 
-                           'pg_stat_statements_info', 'geometry_columns', 
-                           'geography_columns', 'spatial_ref_sys') -- Exclude specific tables
+      AND m.name NOT IN ('_prisma_migrations') -- Exclude specific tables
 )
-SELECT 
+SELECT
     table_name AS name,
     json_group_array(
-        json_object(
-            'name', column_name,
-            'type', data_type,
-            'nullable', nullable,
-            'is_enum', is_enum
-        )
+            json_object(
+                    'name', column_name,
+                    'type', data_type,
+                    'nullable', nullable,
+                    'is_enum', is_enum
+            )
     ) AS columns
-FROM 
+FROM
     column_info
-GROUP BY 
+GROUP BY
     table_name
-ORDER BY 
+ORDER BY
     table_name;`
 	}
 
@@ -331,9 +329,26 @@ ORDER BY
 			return nil, err
 		}
 
-		if err := json.Unmarshal(columns, &table.Columns); err != nil {
-			utils.LogError("prizzle-table-info-extractor", "could not unmarshal columns: "+err.Error())
-			return nil, err
+		if driver == "sqlite3" {
+			var _columns []SqliteColumn
+
+			if err := json.Unmarshal(columns, &_columns); err != nil {
+				utils.LogFatal("prizzle-table-info-extractor", "could not unmarshal columns: "+err.Error())
+				return nil, err
+			}
+
+			for _, column := range _columns {
+				table.Columns = append(table.Columns, Column{
+					Name:     column.Name,
+					Type:     column.Type,
+					Nullable: column.Nullable == 1,
+				})
+			}
+		} else {
+			if err := json.Unmarshal(columns, &table.Columns); err != nil {
+				utils.LogError("prizzle-table-info-extractor", "could not unmarshal columns: "+err.Error())
+				return nil, err
+			}
 		}
 
 		schema[table.Name] = table
@@ -343,7 +358,7 @@ ORDER BY
 		utils.LogError("prizzle-table-info-extractor", "no tables found")
 		return schema, nil
 	} else {
-		utils.LogInfo("prizzle-table-info-extractor", "found tables:\n")
+		utils.LogInfo("prizzle-table-info-extractor", "found tables:")
 
 		for _, table := range schema {
 			var columnList = ""
@@ -359,7 +374,7 @@ ORDER BY
 				columnList += utils.GreyString(column.Name)
 			}
 
-			utils.LogInfo("prizzle-table-info-extractor", utils.GreyString(table.Name)+" with columns: "+columnList+"\n")
+			utils.LogInfo("", utils.GreyString(table.Name)+" with columns: "+columnList)
 		}
 	}
 
@@ -429,33 +444,69 @@ GROUP BY
 
 func SqliteTypeToGoType(column Column) string {
 	switch column.Type {
-	case "INTEGER":
+	case "TINYINT":
 		if column.Nullable {
-			return "*int"
+			return "*int8"
 		}
-		return "int"
-	case "TEXT":
+		return "int8"
+	case "SMALLINT", "INT2":
 		if column.Nullable {
-			return "*string"
+			return "*int16"
 		}
-		return "string"
-	case "REAL":
+		return "int16"
+	case "MEDIUMINT":
+		if column.Nullable {
+			return "*int32"
+		}
+		return "int32"
+	case "INTEGER", "INT", "BIGINT", "INT8":
+		if column.Nullable {
+			return "*int64"
+		}
+		return "int64"
+
+	case "UNSIGNED BIG INT":
+		if column.Nullable {
+			return "*uint64"
+		}
+		return "uint64"
+
+	case "REAL", "DOUBLE", "DOUBLE PRECISION", "FLOAT", "NUMERIC", "DECIMAL":
 		if column.Nullable {
 			return "*float64"
 		}
 		return "float64"
+
+	case "TEXT", "CLOB", "CHARACTER", "CHAR", "NCHAR", "NATIVE CHARACTER", "VARCHAR", "VARYING CHARACTER", "NVARCHAR":
+		if column.Nullable {
+			return "*string"
+		}
+		return "string"
+
+	case "DATE", "DATETIME":
+		if column.Nullable {
+			return "*time.Time"
+		}
+		return "time.Time"
+
 	case "BLOB":
 		if column.Nullable {
 			return "*[]byte"
 		}
 		return "[]byte"
-	}
 
-	if column.Nullable {
-		return "*string"
-	}
+	case "BOOLEAN":
+		if column.Nullable {
+			return "*bool"
+		}
+		return "bool"
 
-	return "string"
+	default:
+		if column.Nullable {
+			return "*string"
+		}
+		return "string"
+	}
 }
 
 func PgTypeToGoType(column Column) string {
@@ -529,4 +580,10 @@ type Column struct {
 	Type     string `json:"type"`
 	Nullable bool   `json:"nullable"`
 	IsEnum   bool   `json:"is_enum"`
+}
+
+type SqliteColumn struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Nullable int    `json:"nullable"`
 }
