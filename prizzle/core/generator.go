@@ -31,6 +31,10 @@ func GenerateClientModel(driver string, schemaFilePath string) {
 		utils.LogFatal("prizzle-generator", "could not get tables info: "+err.Error())
 	}
 
+	if len(tables) == 0 {
+		utils.LogFatal("prizzle-generator", "no tables found")
+	}
+
 	GenerateDefinitionModel(driver, enums, tables, schemaFilePath)
 
 	GenerateQueryModel(tables, schemaFilePath)
