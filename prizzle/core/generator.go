@@ -31,16 +31,19 @@ func GenerateClientModel(driver string, schemaFilePath string) {
 		utils.LogFatal("prizzle-generator", "could not get tables info: "+err.Error())
 	}
 
-	GenerateDefinitionModel(enums, tables, schemaFilePath)
+	GenerateDefinitionModel(driver, enums, tables, schemaFilePath)
 
 	GenerateQueryModel(tables, schemaFilePath)
 }
 
 func GenerateDefinitionModel(
+	driver string,
 	enums map[string]Enum,
 	tables map[string]Table,
 	schemaFilePath string,
 ) {
+	utils.LogInfo("prizzle-definition-model-generator", "generating definition model...")
+
 	var buffer = "package client\n\n"
 
 	buffer += "import prizzle \"github.com/dullkingsman/go-pkg/prizzle/core\"\n\n"
@@ -100,7 +103,13 @@ func GenerateDefinitionModel(
 		for _, column := range table.Columns {
 			var col = utils.SnakeCaseToPascalCase(column.Name)
 
-			_tables += "\t" + col + " " + PgTypeToGoType(column) + " " + "`json:\"" + utils.LowercaseFirstLetter(col) + ",omitempty\"`" + "\n"
+			var _type = PgTypeToGoType(column)
+
+			if driver == "sqlite3" {
+				_type = SqliteTypeToGoType(column)
+			}
+
+			_tables += "\t" + col + " " + _type + " " + "`json:\"" + utils.LowercaseFirstLetter(col) + ",omitempty\"`" + "\n"
 		}
 
 		_tables += "}\n\n\n"
@@ -127,9 +136,13 @@ func GenerateDefinitionModel(
 	if err := utils.WriteToFile(filePath, formatted); err != nil {
 		utils.LogFatal("prizzle-definition-model-generator", "could not write to file: "+err.Error())
 	}
+
+	utils.LogSuccess("prizzle-definition-model-generator", "generated definition model")
 }
 
 func GenerateQueryModel(schema map[string]Table, schemaFilePath string) {
+	utils.LogInfo("prizzle-query-model-generator", "generating query model...")
+
 	var buffer = "package client\n\n"
 
 	buffer += "import prizzle \"github.com/dullkingsman/go-pkg/prizzle/core\"\n\n"
@@ -193,9 +206,13 @@ func GenerateQueryModel(schema map[string]Table, schemaFilePath string) {
 	if err := utils.WriteToFile(filePath, formatted); err != nil {
 		utils.LogFatal("prizzle-query-model-generator", "could not write to file: "+err.Error())
 	}
+
+	utils.LogSuccess("prizzle-query-model-generator", "generated query model")
 }
 
 func GetTablesInfo(driver string, dbClient DatabaseClient) (map[string]Table, error) {
+	utils.LogInfo("prizzle-table-info-extractor", "getting tables info...")
+
 	var query = `WITH column_info AS (
     SELECT
         c.table_name,
@@ -314,10 +331,14 @@ ORDER BY
 		schema[table.Name] = table
 	}
 
+	utils.LogSuccess("prizzle-table-info-extractor", "got tables info")
+
 	return schema, nil
 }
 
 func GetEnumsInfo(dbClient DatabaseClient) (map[string]Enum, error) {
+	utils.LogInfo("prizzle-enum-info-extractor", "getting enums info...")
+
 	var query = `SELECT
     t.typname AS name,
     json_agg(e.enumlabel) AS values
@@ -369,7 +390,40 @@ GROUP BY
 		schema[enum.Name] = enum
 	}
 
+	utils.LogSuccess("prizzle-enum-info-extractor", "got enums info")
+
 	return schema, nil
+}
+
+func SqliteTypeToGoType(column Column) string {
+	switch column.Type {
+	case "INTEGER":
+		if column.Nullable {
+			return "*int"
+		}
+		return "int"
+	case "TEXT":
+		if column.Nullable {
+			return "*string"
+		}
+		return "string"
+	case "REAL":
+		if column.Nullable {
+			return "*float64"
+		}
+		return "float64"
+	case "BLOB":
+		if column.Nullable {
+			return "*[]byte"
+		}
+		return "[]byte"
+	}
+
+	if column.Nullable {
+		return "*string"
+	}
+
+	return "string"
 }
 
 func PgTypeToGoType(column Column) string {

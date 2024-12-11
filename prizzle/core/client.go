@@ -87,11 +87,15 @@ func LoadDatabaseConnections(driver string, urlEnvKeys ...string) {
 
 		var dbInfo = ""
 
-		if info, parseError := url.Parse(connString); parseError == nil {
-			dbInfo = " " + utils.GreyString(strings.TrimSuffix(info.Path, "/")) + " at " + utils.GreyString(info.Host)
+		if driver == "sqlite3" {
+			dbInfo = " " + utils.GreyString(connString)
+		} else {
+			if info, parseError := url.Parse(connString); parseError == nil {
+				dbInfo = " " + utils.GreyString(strings.TrimSuffix(info.Path, "/")) + " at " + utils.GreyString(info.Host)
+			}
 		}
 
-		utils.LogSuccess("prizzle-database-connection-loader", "successfully connected to database%s", dbInfo)
+		utils.LogSuccess("prizzle-database-connection-loader", "successfully connected to database"+dbInfo)
 
 		DatabaseConnections = append(DatabaseConnections, &DB{DB: db})
 	}
