@@ -35,6 +35,10 @@ func GenerateClientModel(driver string, schemaFilePath string) {
 		utils.LogFatal("prizzle-generator", "no tables found")
 	}
 
+	if driver == "postgres" && len(enums) == 0 {
+		utils.LogWarn("prizzle-generator", "no enums found")
+	}
+
 	GenerateDefinitionModel(driver, enums, tables, schemaFilePath)
 
 	GenerateQueryModel(tables, schemaFilePath)
