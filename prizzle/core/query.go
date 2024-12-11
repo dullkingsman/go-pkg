@@ -49,28 +49,28 @@ func (q *SqlQuery) Build() PreparedSqlQuery {
 	}
 }
 
-func (q *PreparedSqlQuery) Exec(query string, args ...any) (sql.Result, error) {
-	return q.Client.Exec(query, args...)
+func (q *PreparedSqlQuery) Exec() (sql.Result, error) {
+	return q.Client.Exec(q.QueryString, q.Args...)
 }
 
-func (q *PreparedSqlQuery) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	return q.Client.ExecContext(ctx, query, args...)
+func (q *PreparedSqlQuery) ExecContext(ctx context.Context) (sql.Result, error) {
+	return q.Client.ExecContext(ctx, q.QueryString, q.Args...)
 }
 
-func (q *PreparedSqlQuery) Query(query string, args ...any) (*sql.Rows, error) {
-	return q.Client.Query(query, args...)
+func (q *PreparedSqlQuery) Query() (*sql.Rows, error) {
+	return q.Client.Query(q.QueryString, q.Args...)
 }
 
-func (q *PreparedSqlQuery) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return q.Client.QueryContext(ctx, query, args...)
+func (q *PreparedSqlQuery) QueryContext(ctx context.Context) (*sql.Rows, error) {
+	return q.Client.QueryContext(ctx, q.QueryString, q.Args...)
 }
 
-func (q *PreparedSqlQuery) QueryRow(query string, args ...any) *sql.Row {
-	return q.Client.QueryRow(query, args...)
+func (q *PreparedSqlQuery) QueryRow() *sql.Row {
+	return q.Client.QueryRow(q.QueryString, q.Args...)
 }
 
-func (q *PreparedSqlQuery) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	return q.Client.QueryRowContext(ctx, query, args...)
+func (q *PreparedSqlQuery) QueryRowContext(ctx context.Context) *sql.Row {
+	return q.Client.QueryRowContext(ctx, q.QueryString, q.Args...)
 }
 
 // WITH ----------------------------------------------------------------------------------------------------------------
