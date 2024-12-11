@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"github.com/dullkingsman/go-pkg/utils"
+	_ "github.com/mattn/go-sqlite3"
 	"math/rand"
 	"net/url"
 	"os"
