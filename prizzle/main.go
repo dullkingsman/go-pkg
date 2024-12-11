@@ -11,6 +11,7 @@ func main() {
 	var args = os.Args[1:]
 
 	var (
+		driver         = "postgres"
 		goExec         = false
 		envFilePath    = ".env"
 		schemaFilePath = "model.prisma"
@@ -35,6 +36,10 @@ func main() {
 				printGeneralHelp(0)
 			case "--go-exec", "-g":
 				goExec = true
+			case "--driver", "-d":
+				checkOptionValue("--driver", index, args)
+				driver = args[index+1]
+				skipNext = true
 			case "--schema", "-s":
 				checkOptionValue("--schema", index, args)
 				schemaFilePath = args[index+1]
@@ -60,19 +65,30 @@ func main() {
 		utils.LogInfo("prizzle", "being run using 'go run'")
 	}
 
-	prizzle.LoadDatabaseConnections()
+	if !isSupportedDriver(driver) {
+		utils.LogError("prizzle", "unsupported driver: "+driver)
+		printGeneralHelp(1)
+	}
+
+	prizzle.LoadDatabaseConnections(driver)
 
 	defer prizzle.CloseDbConnections()
 
 	switch currentCommand {
 	case "generate":
-		prizzle.GenerateClientModel(schemaFilePath)
+		prizzle.GenerateClientModel(driver, schemaFilePath)
 	}
+}
+
+func isSupportedDriver(driver string) bool {
+	return driver == "postgres" || driver == "sqlite3"
 }
 
 func isValidOption(value string) bool {
 	return value == "--env" ||
 		value == "-e" ||
+		value == "--driver" ||
+		value == "-d" ||
 		value == "--schema" ||
 		value == "-s" ||
 		value == "--go-exec" ||
@@ -100,6 +116,7 @@ Commands:
 
 Options:
   -e, --env    	PATH  Specify the .env file to pull connections urls and other configurations from
+  -d, --driver  DRIVER  Specify the database driver to use (postgres, sqlite3)
   -s, --schema  PATH  Specify the topologies.json file that defines the broker 
   -g, --go-exec   	  Specify whether it is being run using 'go run' or as a pre-generated binary
   --help          	  Show this help message and exit

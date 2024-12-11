@@ -9,16 +9,23 @@ import (
 	"strings"
 )
 
-func GenerateClientModel(schemaFilePath string) {
+func GenerateClientModel(driver string, schemaFilePath string) {
 	var client = GetMasterConnection()
 
-	enums, err := GetEnumsInfo(client)
+	var (
+		enums map[string]Enum
+		err   error
+	)
 
-	if err != nil {
-		utils.LogFatal("prizzle-generator", "could not get enums info: "+err.Error())
+	if driver == "postgres" {
+		enums, err = GetEnumsInfo(client)
+
+		if err != nil {
+			utils.LogFatal("prizzle-generator", "could not get enums info: "+err.Error())
+		}
 	}
 
-	tables, err := GetTablesInfo(client)
+	tables, err := GetTablesInfo(driver, client)
 
 	if err != nil {
 		utils.LogFatal("prizzle-generator", "could not get tables info: "+err.Error())
@@ -188,9 +195,8 @@ func GenerateQueryModel(schema map[string]Table, schemaFilePath string) {
 	}
 }
 
-func GetTablesInfo(dbClient DatabaseClient) (map[string]Table, error) {
-	var query = `
-WITH column_info AS (
+func GetTablesInfo(driver string, dbClient DatabaseClient) (map[string]Table, error) {
+	var query = `WITH column_info AS (
     SELECT
         c.table_name,
         c.column_name AS name,
@@ -236,6 +242,44 @@ GROUP BY
     table_name
 ORDER BY
     table_name;`
+
+	if driver == "sqlite3" {
+		query = `WITH column_info AS (
+    SELECT 
+        m.name AS table_name,
+        p.name AS column_name,
+        p.type AS data_type,
+        p.[notnull] = 0 AS nullable,
+        FALSE AS is_enum -- SQLite does not support enums
+    FROM 
+        sqlite_master m
+    JOIN 
+        pragma_table_info(m.name) p
+    ON 
+        m.type = 'table'
+    WHERE 
+        m.name NOT LIKE 'sqlite_%' -- Exclude SQLite internal tables
+        AND m.name NOT IN ('pg_stat_statements', '_prisma_migrations', 
+                           'pg_stat_statements_info', 'geometry_columns', 
+                           'geography_columns', 'spatial_ref_sys') -- Exclude specific tables
+)
+SELECT 
+    table_name AS name,
+    json_group_array(
+        json_object(
+            'name', column_name,
+            'type', data_type,
+            'nullable', nullable,
+            'is_enum', is_enum
+        )
+    ) AS columns
+FROM 
+    column_info
+GROUP BY 
+    table_name
+ORDER BY 
+    table_name;`
+	}
 
 	rows, err := dbClient.Query(query)
 

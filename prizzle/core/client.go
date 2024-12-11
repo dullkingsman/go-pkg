@@ -21,7 +21,7 @@ var DatabaseConnections []*DB
 //
 //	The first argument is the environment variable key for the master database url
 //	The second argument is the environment variable key for the secondary database urls
-func LoadDatabaseConnections(urlEnvKeys ...string) {
+func LoadDatabaseConnections(driver string, urlEnvKeys ...string) {
 	var masterDbUrlKey = "DB_URL"
 	var secondaryDbUrlsKey = "SECONDARY_DB_URLS"
 
@@ -69,10 +69,10 @@ func LoadDatabaseConnections(urlEnvKeys ...string) {
 	utils.LogInfo("prizzle-database-connection-loader", "creating database "+connectionsString+"...")
 
 	for _, connString := range dbUrls {
-		var db, err = sql.Open("postgres", connString)
+		var db, err = sql.Open(driver, connString)
 
 		if err != nil {
-			utils.LogFatal("prizzle-database-connection-loader", "database connection error:"+err.Error())
+			utils.LogFatal("prizzle-database-connection-loader", "database connection error: "+err.Error())
 			return
 		}
 
