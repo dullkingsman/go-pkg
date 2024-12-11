@@ -102,7 +102,7 @@ func checkOptionValue(option string, index int, args []string) {
 		printGeneralHelp(1)
 	}
 
-	if !isValidOption(args[index+1]) {
+	if !isValidOption(args[index]) {
 		utils.LogError("prizzle", "invalid command option used as value for "+option)
 		printGeneralHelp(1)
 	}
