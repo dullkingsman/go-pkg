@@ -133,7 +133,7 @@ func GenerateDefinitionModel(
 		utils.LogFatal("prizzle-definition-model-generator", "could not format code: "+err.Error())
 	}
 
-	var filePath = filepath.Join(filepath.Dir(schemaFilePath) + "/db/client/definition.go")
+	var filePath = filepath.Join(filepath.Dir(schemaFilePath) + "/client/definition.go")
 
 	dir := filepath.Dir(filePath)
 
@@ -168,23 +168,23 @@ func GenerateQueryModel(schema map[string]Table, schemaFilePath string) {
 		for _, column := range table.Columns {
 			var col = utils.SnakeCaseToPascalCase(column.Name)
 
-			typeColumns += "\t" + col + " query.SqlName\n"
+			typeColumns += "\t" + col + " prizzle.SqlName\n"
 
-			valueColumns += "\t" + col + ": query.SqlName(\"" + column.Name + "\"),\n"
+			valueColumns += "\t" + col + ": prizzle.SqlName(\"" + column.Name + "\"),\n"
 		}
 
 		types += "type _" + name + " struct {\n"
-		types += "\tquery.SqlTable\n"
+		types += "\tprizzle.SqlTable\n"
 		types += typeColumns
 		types += "}\n\n"
 
 		extensions += "// " + name + " extensions\n"
-		extensions += "func (t _" + name + ") GetSqlTable() query.SqlTable { return t.SqlTable }\n"
-		extensions += "func (t _" + name + ") As(alias string) query.EmbedsSqlTable { t.SqlTable = t.SqlTable.As(alias); return t }\n"
-		extensions += "func (t _" + name + ") Aliased(alias string) query.EmbedsSqlTable { t.SqlTable = t.SqlTable.Aliased(alias); return t }\n"
-		extensions += "func (t _" + name + ") Namespaced(alias string) query.EmbedsSqlTable { t.SqlTable = t.SqlTable.Namespaced(alias); return t }\n\n"
+		extensions += "func (t _" + name + ") GetSqlTable() prizzle.SqlTable { return t.SqlTable }\n"
+		extensions += "func (t _" + name + ") As(alias string) prizzle.EmbedsSqlTable { t.SqlTable = t.SqlTable.As(alias); return t }\n"
+		extensions += "func (t _" + name + ") Aliased(alias string) prizzle.EmbedsSqlTable { t.SqlTable = t.SqlTable.Aliased(alias); return t }\n"
+		extensions += "func (t _" + name + ") Namespaced(alias string) prizzle.EmbedsSqlTable { t.SqlTable = t.SqlTable.Namespaced(alias); return t }\n\n"
 
-		values += "var " + tableName + " = _" + name + "{\n\tSqlTable: query.SqlTable{\n\t\tName: \"" + name + "\",\n\t},\n" + valueColumns + "}\n"
+		values += "var " + tableName + " = _" + name + "{\n\tSqlTable: prizzle.SqlTable{\n\t\tName: \"" + name + "\",\n\t},\n" + valueColumns + "}\n"
 	}
 
 	buffer += types
