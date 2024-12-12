@@ -95,15 +95,17 @@ func (q *SqlQuery) With(alias SqlName, as SqlQueryString) *SqlQuery {
 
 func (q *SqlQuery) InsertInto(target EmbedsSqlTable, valuePairs SqlValues) *SqlQuery {
 	var valuePointers []string
-	var columns []string
 
-	extractMutationsFromValuePairsWithInterceptor(
-		len(*q.Args)+1,
+	var columns, _ = extractMutationsFromValuePairsWithInterceptor(
 		valuePairs,
-		func(column string, slots string, values []interface{}) {
-			columns = append(columns)
-			*q.Args = append(*q.Args, values...)
-			valuePointers = append(valuePointers, fmt.Sprintf("$%d", len(*q.Args)))
+		func(column string, value interface{}) {
+			var sqlValue = getSqlValue(value)
+
+			var valueIndicators = getCommaSeparatedStringList(len(*q.Args)+1, sqlValue.Value, func(value interface{}) {
+				*q.Args = append(*q.Args, value)
+			})
+
+			valuePointers = append(valuePointers, fmt.Sprintf("%s%s%s", sqlValue.Prefix, valueIndicators, sqlValue.Suffix))
 		},
 	)
 
@@ -126,6 +128,70 @@ func (q *SqlQuery) InsertInto(target EmbedsSqlTable, valuePairs SqlValues) *SqlQ
 	return q
 }
 
+func (q *SqlQuery) BulkInsertInto(target EmbedsSqlTable, valuePairsList []SqlValues) *SqlQuery {
+	if len(valuePairsList) == 0 {
+		return q
+	}
+
+	var valuePointers []string
+
+	var columns, _ = extractMutationsFromValuePairsWithInterceptor(
+		valuePairsList[0],
+		func(column string, value interface{}) {
+			var sqlValue = getSqlValue(value)
+
+			var valueIndicators = getCommaSeparatedStringList(len(*q.Args)+1, sqlValue.Value, func(value interface{}) {
+				*q.Args = append(*q.Args, value)
+			})
+
+			valuePointers = append(valuePointers, fmt.Sprintf("%s%s%s", sqlValue.Prefix, valueIndicators, sqlValue.Suffix))
+		},
+	)
+
+	if q.BaseStr != "" {
+		q.BaseStr = ","
+	} else {
+		q.BaseStr += getPrefixedList(
+			q.BaseStr,
+			"\nINSERT INTO"+" "+target.GetSqlTable().String()+" (",
+			columns,
+		) + ")\nVALUES"
+	}
+
+	for i, valuePairs := range valuePairsList {
+		if i == 0 {
+			continue
+		}
+
+		valuePointers = []string{}
+
+		extractMutationsFromValuePairsWithInterceptor(
+			valuePairs,
+			func(column string, value interface{}) {
+				var sqlValue = getSqlValue(value)
+
+				var valueIndicators = getCommaSeparatedStringList(len(*q.Args)+1, sqlValue.Value, func(value interface{}) {
+					*q.Args = append(*q.Args, value)
+				})
+
+				valuePointers = append(valuePointers, fmt.Sprintf("%s%s%s", sqlValue.Prefix, valueIndicators, sqlValue.Suffix))
+			},
+		)
+
+		q.BaseStr += getPrefixedList(
+			"",
+			"\n\t(",
+			valuePointers,
+		) + ")"
+
+		if i != len(valuePairsList)-1 {
+			q.BaseStr += ","
+		}
+	}
+
+	return q
+}
+
 func (q *SqlQuery) InsertIntoFromSelect(target EmbedsSqlTable, columns ...SqlName) *SqlQuery {
 	q.BaseStr += getPrefixedList(
 		q.BaseStr,
@@ -142,11 +208,15 @@ func (q *SqlQuery) Update(target EmbedsSqlTable, valuePairs SqlValues) *SqlQuery
 	var updates []string
 
 	extractMutationsFromValuePairsWithInterceptor(
-		len(*q.Args)+1,
 		valuePairs,
-		func(column string, slots string, values []interface{}) {
-			*q.Args = append(*q.Args, values...)
-			updates = append(updates, column+" = "+fmt.Sprintf("$%d", len(*q.Args)))
+		func(column string, value interface{}) {
+			var sqlValue = getSqlValue(value)
+
+			var valueIndicators = getCommaSeparatedStringList(len(*q.Args)+1, sqlValue.Value, func(value interface{}) {
+				*q.Args = append(*q.Args, value)
+			})
+
+			updates = append(updates, column+"="+fmt.Sprintf("%s%s%s", sqlValue.Prefix, valueIndicators, sqlValue.Suffix))
 		},
 	)
 
@@ -201,11 +271,15 @@ func (q *SqlQuery) DoUpdate(valuePairs SqlValues) *SqlQuery {
 	var updates []string
 
 	extractMutationsFromValuePairsWithInterceptor(
-		len(*q.Args)+1,
 		valuePairs,
-		func(column string, slots string, values []interface{}) {
-			*q.Args = append(*q.Args, values...)
-			updates = append(updates, column+" = "+fmt.Sprintf("$%d", len(*q.Args)))
+		func(column string, value interface{}) {
+			var sqlValue = getSqlValue(value)
+
+			var valueIndicators = getCommaSeparatedStringList(len(*q.Args)+1, sqlValue.Value, func(value interface{}) {
+				*q.Args = append(*q.Args, value)
+			})
+
+			updates = append(updates, column+" = "+fmt.Sprintf("%s%s%s", sqlValue.Prefix, valueIndicators, sqlValue.Suffix))
 		},
 	)
 
@@ -370,6 +444,10 @@ func (q *SqlQuery) Coalesce(items ...interface{}) SqlName {
 
 	for index, item := range items {
 		if value, ok := item.(SqlName); ok {
+			tmp += value.String()
+		} else if value, ok := item.(EmbedsSqlTable); ok {
+			tmp += value.GetSqlTable().String()
+		} else if value, ok := item.(SqlTable); ok {
 			tmp += value.String()
 		} else if value, ok := item.(string); ok {
 			tmp += value
@@ -702,17 +780,17 @@ func (q *SqlQuery) NotBetween(column SqlName, left interface{}, right interface{
 
 func (q *SqlQuery) Like(column SqlName, right string) SqlCondition {
 	*q.Args = append(*q.Args, right)
-	return SqlCondition(column.String() + " LIKE '" + fmt.Sprintf("$%d", len(*q.Args)) + "'")
+	return SqlCondition(column.String() + " LIKE " + fmt.Sprintf("$%d", len(*q.Args)))
 }
 
 func (q *SqlQuery) ILike(column SqlName, right string) SqlCondition {
 	*q.Args = append(*q.Args, right)
-	return SqlCondition(column.String() + " ILIKE '" + fmt.Sprintf("$%d", len(*q.Args)) + "'")
+	return SqlCondition(column.String() + " ILIKE " + fmt.Sprintf("$%d", len(*q.Args)))
 }
 
 func (q *SqlQuery) NotILike(column SqlName, right string) SqlCondition {
 	*q.Args = append(*q.Args, right)
-	return SqlCondition(column.String() + " NOT ILIKE '" + fmt.Sprintf("$%d", len(*q.Args)) + "'")
+	return SqlCondition(column.String() + " NOT ILIKE " + fmt.Sprintf("$%d", len(*q.Args)))
 }
 
 func (q *SqlQuery) ArrayContains(column SqlName, values ...interface{}) SqlCondition {
@@ -720,31 +798,59 @@ func (q *SqlQuery) ArrayContains(column SqlName, values ...interface{}) SqlCondi
 
 	*q.Args = append(*q.Args, values...)
 
-	var arrayValueSlots = ""
+	var arrayValues = ""
 
 	for index, _ := range values {
-		arrayValueSlots += fmt.Sprintf("$%d", argsSize+index)
+		arrayValues += fmt.Sprintf("$%d", argsSize+index)
 
 		if index != len(values)-1 {
-			arrayValueSlots += ", "
+			arrayValues += ", "
 		}
 	}
 
-	return SqlCondition(column.String() + " @> ARRAY[" + arrayValueSlots + "]")
+	return SqlCondition(column.String() + " @> ARRAY[" + arrayValues + "]")
 }
 
 // COMBINE -------------------------------------------------------------------------------------------------------------
 
 func (q *SqlQuery) Not(condition SqlCondition) SqlCondition {
+	if condition == "" {
+		return condition
+	}
+
 	return SqlCondition("NOT (" + condition.String() + ")")
 }
 
 func (q *SqlQuery) And(left SqlCondition, right SqlCondition) SqlCondition {
+	if shouldReturnJustOneConditionIfTheOtherIsEmpty(left, right) != nil {
+		return *shouldReturnJustOneConditionIfTheOtherIsEmpty(left, right)
+	}
+
 	return SqlCondition("(" + left.String() + " AND " + right.String() + ")")
 }
 
 func (q *SqlQuery) Or(left SqlCondition, right SqlCondition) SqlCondition {
+	if shouldReturnJustOneConditionIfTheOtherIsEmpty(left, right) != nil {
+		return *shouldReturnJustOneConditionIfTheOtherIsEmpty(left, right)
+	}
+
 	return SqlCondition("(" + left.String() + " OR " + right.String() + ")")
+}
+
+func shouldReturnJustOneConditionIfTheOtherIsEmpty(left SqlCondition, right SqlCondition) *SqlCondition {
+	if left == "" && right == "" {
+		return &left
+	}
+
+	if left != "" && right != "" {
+		return nil
+	}
+
+	if left == "" {
+		return &right
+	}
+
+	return &left
 }
 
 // GROUP ---------------------------------------------------------------------------------------------------------------
@@ -804,7 +910,30 @@ func (q *SqlQuery) Namespaced(namespace string, name SqlName) SqlName {
 	return SqlName(namespace + "." + name.String())
 }
 
-// Functions -----------------------------------------------------------------------------------------------------------
+// UTILS ---------------------------------------------------------------------------------------------------------------
+
+func (q *SqlQuery) Func(name string, arguments ...interface{}) SqlName {
+	var tmp = name + "("
+
+	for i, argument := range arguments {
+		if value, ok := argument.(SqlName); ok {
+			tmp += value.String()
+		} else if value, ok := argument.(EmbedsSqlTable); ok {
+			tmp += value.GetSqlTable().String()
+		} else if value, ok := argument.(SqlTable); ok {
+			tmp += value.String()
+		} else {
+			*q.Args = append(*q.Args, argument)
+			tmp += fmt.Sprintf("$%d", len(*q.Args))
+		}
+
+		if i != len(arguments)-1 {
+			tmp += ", "
+		}
+	}
+
+	return SqlName(tmp + ")")
+}
 
 func (q *SqlQuery) JsonbBuildObject(json SqlJson) SqlName {
 	var tmp = "JSONB_BUILD_OBJECT("
@@ -831,12 +960,14 @@ func ToJsonB(column SqlName) SqlName {
 	return SqlName("TO_JSONB(" + column.String() + ")")
 }
 
-// JsonArray casts values to json[] in postgres.
-//
-// If it can not marshal the provided json it will replace the value
-// with the UNRESOLVABLE_JSON marker making it clear that the provided
-// json has not been processed. This will allow the query to fail on
-// execution and be caught early.
+func ArrayToJson(column SqlName) SqlName {
+	return SqlName("ARRAY_TO_JSON(" + column.String() + ")")
+}
+
+func JsonbArrayElements(column SqlName) SqlName {
+	return SqlName("JSONB_ARRAY_ELEMENTS(" + column.String() + ")")
+}
+
 func (q *SqlQuery) JsonArray(value interface{}) SqlValue {
 	var returnable = SqlValue{
 		Prefix: "ARRAY[",
@@ -846,6 +977,17 @@ func (q *SqlQuery) JsonArray(value interface{}) SqlValue {
 
 	var _value = reflect.ValueOf(value)
 
+	if _value.Kind() == reflect.String {
+		returnable.Value = append(returnable.Value.([]string), _value.String())
+		return returnable
+
+	}
+
+	if _value.Kind() == reflect.Ptr && _value.Elem().Kind() == reflect.String {
+		returnable.Value = append(returnable.Value.([]string), _value.Elem().String())
+		return returnable
+	}
+
 	if _value.Kind() != reflect.Slice {
 		return returnable
 	}
@@ -853,13 +995,60 @@ func (q *SqlQuery) JsonArray(value interface{}) SqlValue {
 	for index := 0; index < _value.Len(); index++ {
 		var item = _value.Index(index).Interface()
 
-		var jsonValue, err = json.Marshal(item)
-
-		if err != nil {
-			jsonValue = []byte("UNRESOLVABLE_JSON")
-		}
+		// todo handle error
+		var jsonValue, _ = json.Marshal(item)
 
 		returnable.Value = append(returnable.Value.([]string), string(jsonValue))
+	}
+
+	return returnable
+}
+
+func (q *SqlQuery) CastToJsonB(column SqlName) SqlName {
+	return SqlName(column.String() + "::jsonb")
+}
+
+func (q *SqlQuery) CastToJsonBArray(column SqlName) SqlName {
+	return SqlName(column.String() + "::jsonb[]")
+}
+
+func (q *SqlQuery) Lower(value string) SqlName {
+	*q.Args = append(*q.Args, value)
+	return SqlName("LOWER($" + strconv.Itoa(len(*q.Args)) + ")")
+}
+
+func (q *SqlQuery) LowerC(name SqlName) SqlName {
+	return SqlName("LOWER(" + name.String() + ")")
+}
+
+func (q *SqlQuery) Upper(value string) SqlName {
+	*q.Args = append(*q.Args, value)
+	return SqlName("UPPER($" + strconv.Itoa(len(*q.Args)) + ")")
+}
+
+func (q *SqlQuery) UpperC(name SqlName) SqlName {
+	return SqlName("UPPER(" + name.String() + ")")
+}
+
+func getCommaSeparatedStringList(startsAt int, values interface{}, adapter func(interface{})) string {
+	var returnable = ""
+
+	var _values = reflect.ValueOf(values)
+
+	if _values.Kind() != reflect.Slice {
+		adapter(values)
+		return "$" + strconv.Itoa(startsAt)
+	}
+
+	for index := 0; index < _values.Len(); index++ {
+		var value = _values.Index(index).Interface()
+
+		adapter(value)
+		returnable += "$" + strconv.Itoa(startsAt+index)
+
+		if index != _values.Len()-1 {
+			returnable += ", "
+		}
 	}
 
 	return returnable

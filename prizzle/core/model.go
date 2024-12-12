@@ -152,6 +152,14 @@ func (s SqlTable) As(alias string) SqlTable {
 	return SqlTable{Name: s.String() + " AS " + alias}
 }
 
+func (s SqlTable) Aliased(alias string) SqlTable {
+	return SqlTable{Name: s.String() + " " + alias}
+}
+
+func (s SqlTable) Namespaced(namespace string) SqlTable {
+	return SqlTable{Name: namespace + "." + s.String()}
+}
+
 func (s SqlName) As(alias SqlName) SqlName {
 	return SqlName(s.String() + " AS " + alias.String())
 }
@@ -197,9 +205,17 @@ func (s SqlTable) NamespacedColumns(columns ...SqlName) []SqlName {
 }
 
 func (s SqlName) NamespacedWith(namespace EmbedsSqlTable) SqlName {
+	if namespace == nil || namespace.GetSqlTable().String() == "" {
+		return s
+	}
+
 	return SqlName(namespace.GetSqlTable().String() + "." + s.String())
 }
 
 func (s SqlName) NamespacedWithCustom(namespace SqlName) SqlName {
+	if namespace == "" {
+		return s
+	}
+
 	return SqlName(namespace.String() + "." + s.String())
 }

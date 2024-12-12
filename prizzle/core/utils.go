@@ -1,10 +1,5 @@
 package prizzle
 
-import (
-	"reflect"
-	"strconv"
-)
-
 func getPrefixedListWithExtractor(
 	base string,
 	prefix string,
@@ -61,55 +56,24 @@ func surroundWithDoubleQuotes(string string) string {
 	return "\"" + string + "\""
 }
 
-func extractMutationsFromValuePairsWithInterceptor(
-	slotStartsAt int,
-	valuePairs SqlValues,
-	interceptor func(
-		column string,
-		slots string,
-		values []interface{},
-	),
-) {
+func extractMutationsFromValuePairs(valuePairs SqlValues) ([]string, []interface{}) {
+	return extractMutationsFromValuePairsWithInterceptor(valuePairs, func(column string, value interface{}) {})
+}
+
+func extractMutationsFromValuePairsWithInterceptor(valuePairs SqlValues, interceptor func(column string, value interface{})) ([]string, []interface{}) {
+	var columns []string
+	var values []interface{}
+
 	for key, value := range valuePairs {
 		var column = key.String()
 
-		var sqlValue = getSqlValue(value)
+		columns = append(columns, column)
+		values = append(values, value)
 
-		var values []interface{}
-
-		var slots = getCommaSeparatedSlotList(slotStartsAt, sqlValue.Value, func(value interface{}) {
-			values = append(values, value)
-		})
-
-		slots += sqlValue.Prefix + slots + sqlValue.Suffix
-
-		interceptor(column, slots, values)
-	}
-}
-
-func getCommaSeparatedSlotList(startsAt int, values interface{}, adapter func(interface{})) string {
-	var returnable = ""
-
-	var _values = reflect.ValueOf(values)
-
-	if _values.Kind() != reflect.Slice {
-		adapter(values)
-		return "$" + strconv.Itoa(startsAt)
+		interceptor(column, value)
 	}
 
-	for index := 0; index < _values.Len(); index++ {
-		var value = _values.Index(index).Interface()
-
-		adapter(value)
-
-		returnable += "$" + strconv.Itoa(startsAt+index)
-
-		if index != _values.Len()-1 {
-			returnable += ", "
-		}
-	}
-
-	return returnable
+	return columns, values
 }
 
 func getSqlValue(value interface{}) SqlValue {
@@ -123,29 +87,4 @@ func getSqlValue(value interface{}) SqlValue {
 		Value:  value,
 		Suffix: "",
 	}
-}
-
-// returns the left condition if both conditions is empty
-func shouldReturnJustOneConditionIfTheOtherIsEmpty(
-	left SqlCondition,
-	right SqlCondition,
-	resolver func(left SqlCondition, right SqlCondition) SqlCondition,
-) SqlCondition {
-	if left == "" && right == "" {
-		return left
-	}
-
-	if left != "" && right != "" {
-		return resolver(right, left)
-	}
-
-	if left == "" {
-		return right
-	}
-
-	return left
-}
-
-func surroundWithParenthesis(str string) string {
-	return "(" + str + ")"
 }
