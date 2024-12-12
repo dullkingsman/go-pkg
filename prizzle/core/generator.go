@@ -487,9 +487,9 @@ func SqliteTypeToGoType(column Column) string {
 
 	case "DATE", "DATETIME":
 		if column.Nullable {
-			return "*time.Time"
+			return "*prizzle.DateTime"
 		}
-		return "time.Time"
+		return "prizzle.DateTime"
 
 	case "BLOB":
 		if column.Nullable {
