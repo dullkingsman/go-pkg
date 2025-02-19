@@ -277,3 +277,43 @@ func AnyToPascalCase(s string) string {
 
 	return string(result)
 }
+
+func AnyToLowerSnakeCase(s string) string {
+	var result []rune
+
+	if len(s) == 0 {
+		return ""
+	}
+
+	var parts = strings.Split(string(RemoveAnySpecialCharactersAndReturnSpaceSeparatedString(s)), " ")
+
+	for idx, part := range parts {
+		if idx > 0 {
+			result = append(result, '_')
+		}
+
+		result = append(result, []rune(strings.ToLower(part))...)
+	}
+
+	return string(result)
+}
+
+func AnyToUpperSnakeCase(s string) string {
+	var result []rune
+
+	if len(s) == 0 {
+		return ""
+	}
+
+	var parts = strings.Split(string(RemoveAnySpecialCharactersAndReturnSpaceSeparatedString(s)), " ")
+
+	for idx, part := range parts {
+		if idx > 0 {
+			result = append(result, '_')
+		}
+
+		result = append(result, []rune(strings.ToUpper(part))...)
+	}
+
+	return string(result)
+}

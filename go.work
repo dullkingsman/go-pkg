@@ -5,4 +5,5 @@ use (
 	prizzle
 	utils
 	rabbit-topology
+	roga
 )

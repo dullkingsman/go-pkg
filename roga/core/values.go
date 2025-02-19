@@ -1,0 +1,83 @@
+package core
+
+import (
+	"os"
+	"runtime"
+	"time"
+)
+
+const (
+	LevelDebug Level = -4
+	LevelInfo  Level = 0
+	LevelWarn  Level = 4
+	LevelError Level = 8
+	LevelFatal Level = 12
+
+	VerbosityClassMandatory VerbosityClass = 0
+	VerbosityClass1         VerbosityClass = 1
+	VerbosityClass2         VerbosityClass = 2
+	VerbosityClass3         VerbosityClass = 3
+	VerbosityClass4         VerbosityClass = 4
+	VerbosityClass5         VerbosityClass = 5
+
+	PriorityOptional Priority = -4
+	PriorityLow      Priority = -2
+	PriorityMedium   Priority = 0
+	PriorityHigh     Priority = 2
+	PriorityCritical Priority = 4
+
+	ActorTypeUser           ActorType = 0 // user
+	ActorTypeSystem         ActorType = 1 // system
+	ActorTypeExternalSystem ActorType = 2 // external system
+
+	DefaultLogQueueSize               int = 1000
+	DefaultOperationQueueSize         int = 1000
+	DefaultProductionChannelItems     int = 1000
+	DefaultStdoutWriterChannelItems   int = 1000
+	DefaultFileWriterChannelItems     int = 1000
+	DefaultExternalWriterChannelItems int = 1000
+
+	DefaultSystemStatsCheckInterval time.Duration = 10
+)
+
+var (
+	defaultOperationContext = Context{
+		Environment: Environment{
+			ApplicationEnvironment: ApplicationEnvironment{
+				Lang:        "go",
+				LangVersion: runtime.Version(),
+				ProcessId:   os.Getpid(),
+			},
+		},
+		SystemSpecifications: SystemSpecifications{
+			Os:       runtime.GOOS,
+			Arch:     runtime.GOARCH,
+			CpuCores: runtime.NumCPU(),
+			PageSize: os.Getpagesize(),
+		},
+	}
+
+	defaultRogaConfig = Config{
+		Instance:   &defaultInstanceConfig,
+		Producer:   &DefaultProducer{},
+		Monitor:    &DefaultMonitor{},
+		Dispatcher: &DefaultDispatcher{},
+		Writer:     &DefaultWriter{},
+	}
+
+	defaultInstanceConfig = InstanceConfig{
+		maxOperationQueueSize:         DefaultOperationQueueSize,
+		maxLogQueueSize:               DefaultLogQueueSize,
+		maxProductionChannelItems:     DefaultProductionChannelItems,
+		maxStdoutWriterChannelItems:   DefaultStdoutWriterChannelItems,
+		maxFileWriterChannelItems:     DefaultFileWriterChannelItems,
+		maxExternalWriterChannelItems: DefaultExternalWriterChannelItems,
+		maxStdoutWriters:              2 * runtime.NumCPU(),
+		maxFileWriters:                2 * runtime.NumCPU(),
+		maxExternalWriters:            4 * runtime.NumCPU(),
+		systemStatsCheckInterval:      DefaultSystemStatsCheckInterval,
+		writeToStdout:                 true,
+		writeToFile:                   true,
+		writeToExternal:               true,
+	}
+)
