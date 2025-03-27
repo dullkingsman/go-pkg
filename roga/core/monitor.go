@@ -1,8 +1,13 @@
 package core
 
-import "time"
+import (
+	"time"
+)
 
 func (r *Roga) monitorAndUpdateSystemMetrics() {
+	r.consumptionSync.Add(1)
+	defer r.consumptionSync.Done()
+
 	for {
 		var (
 			cpuUsage, cpuErr                   = r.monitor.GetCPUUsage()

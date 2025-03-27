@@ -35,13 +35,15 @@ func Init(config ...Config) Roga {
 	}
 
 	var instance = Roga{
-		context:     defaultOperationContext,
-		config:      *_config.Instance,
-		metricsLock: &sync.RWMutex{},
-		producer:    _config.Producer,
-		monitor:     _config.Monitor,
-		dispatcher:  _config.Dispatcher,
-		writer:      _config.Writer,
+		context:         defaultOperationContext,
+		config:          *_config.Instance,
+		metricsLock:     &sync.RWMutex{},
+		consumptionSync: &sync.WaitGroup{},
+		started:         false,
+		producer:        _config.Producer,
+		monitor:         _config.Monitor,
+		dispatcher:      _config.Dispatcher,
+		writer:          _config.Writer,
 		rootOperation: Operation{
 			Id:          uuid.New(),
 			Name:        "root",
@@ -66,6 +68,32 @@ func Init(config ...Config) Roga {
 	instance.rootOperation.r = &instance
 
 	return instance
+}
+
+func (r *Roga) Start() {
+	if !r.started {
+		r.started = true
+		r.consumeChannels()
+	}
+}
+
+func (r *Roga) Recover() {
+	r.writingChannelsFlush.Stdout <- true
+	r.writingChannelsFlush.File <- true
+	r.writingChannelsFlush.External <- true
+
+	r.operationQueueFlush <- true
+	r.logQueueFlush <- true
+
+	r.productionChannelFlush <- true
+
+	r.consumptionSync.Wait()
+
+	utils.LogInfo("roga:signal-handler", "flushed everything")
+}
+
+func (r *Roga) Wait() {
+	r.consumptionSync.Wait()
 }
 
 func (r *Roga) LogFatal(args LogArgs) {
@@ -233,175 +261,322 @@ func (o *Operation) EndOperation(measurementFinalizer ...MeasurementHandler) {
 }
 
 func (r *Roga) consumeProductionChannel() {
+	r.consumptionSync.Add(1)
+	defer r.consumptionSync.Done()
+
+	var flushed = false
+
 	for {
-		if len(r.productionChannel) < r.config.maxProductionChannelItems {
-			continue
+		if flushed {
+			for {
+				select {
+				case writable := <-r.productionChannel:
+					addWritableToQueue(writable, r)
+				default:
+					close(r.productionChannel)
+
+					r.operationQueueFlush <- true
+					r.logQueueFlush <- true
+
+					return
+				}
+			}
 		}
 
-		for i := 0; i < r.config.maxProductionChannelItems; i++ {
-			var writable = <-r.productionChannel
+		select {
+		case <-r.productionChannelFlush:
+			if !flushed {
+				flushed = true
+				continue
+			}
+		default:
+			if len(r.productionChannel) < r.config.maxProductionChannelItems {
+				continue
+			}
 
-			if operation, ok := writable.(Operation); ok {
-				var _, alreadyInBuffer = r.operationBuffer[operation.Id]
-
-				if !alreadyInBuffer {
-					continue
-				}
-
-				r.operationBuffer[operation.Id] = operation
-				r.operationQueue <- operation.Id
-			} else if log, ok := writable.(Log); ok {
-				r.logBuffer[log.Id] = log
-				r.logQueue <- log.Id
+			for i := 0; i < r.config.maxProductionChannelItems; i++ {
+				addWritableToQueue(<-r.productionChannel, r)
 			}
 		}
 	}
 }
 
 func (r *Roga) consumeOperationQueue() {
+	r.consumptionSync.Add(1)
+	defer r.consumptionSync.Done()
+
+	var flushed = false
+
 	for {
-		if len(r.operationQueue) < r.config.maxOperationQueueSize {
-			continue
+		var operations []Operation
+
+		if flushed {
+			for {
+				select {
+				case operationId := <-r.operationQueue:
+					var operation, ok = r.operationBuffer[operationId]
+
+					if !ok {
+						continue
+					}
+
+					operations = append(operations, operation)
+				default:
+					var stop = len(r.productionChannel) == 0
+
+					r.writingChannelsFlush.Stdout <- true
+					r.writingChannelsFlush.File <- true
+					r.writingChannelsFlush.External <- true
+
+					if stop {
+						close(r.operationQueue)
+						return
+					}
+
+					break
+				}
+			}
 		}
 
-		var operations = make([]Operation, r.config.maxOperationQueueSize)
-
-		for i := 0; i < r.config.maxOperationQueueSize; i++ {
-
-			var operationId = <-r.operationQueue
-
-			var operation, ok = r.operationBuffer[operationId]
-
-			if !ok {
+		select {
+		case <-r.operationQueueFlush:
+			if !flushed {
+				flushed = true
+				continue
+			}
+		default:
+			if len(r.operationQueue) < r.config.maxOperationQueueSize {
 				continue
 			}
 
-			operations[i] = operation
+			operations = make([]Operation, r.config.maxOperationQueueSize)
+
+			for i := 0; i < r.config.maxOperationQueueSize; i++ {
+				var operationId = <-r.operationQueue
+
+				var operation, ok = r.operationBuffer[operationId]
+
+				if !ok {
+					continue
+				}
+
+				operations[i] = operation
+			}
 		}
 
 		r.dispatcher.DispatchOperations(operations, &r.writingChannels)
+		operations = make([]Operation, 0)
 	}
 }
 
 func (r *Roga) consumeLogQueue() {
+	r.consumptionSync.Add(1)
+	defer r.consumptionSync.Done()
+
+	var flushed = false
+
 	for {
-		if len(r.logQueue) < r.config.maxLogQueueSize {
-			continue
+		var logs []Log
+
+		if flushed {
+			for {
+				select {
+				case logId := <-r.logQueue:
+					var log, ok = r.logBuffer[logId]
+
+					if !ok {
+						continue
+					}
+
+					logs = append(logs, log)
+				default:
+					var stop = len(r.productionChannel) == 0
+
+					r.writingChannelsFlush.Stdout <- true
+					r.writingChannelsFlush.File <- true
+					r.writingChannelsFlush.External <- true
+
+					if stop {
+						close(r.logQueue)
+						return
+					}
+
+					break
+				}
+			}
 		}
 
-		var logs = make([]Log, r.config.maxLogQueueSize)
-
-		for i := 0; i < r.config.maxLogQueueSize; i++ {
-
-			var logId = <-r.logQueue
-
-			var log, ok = r.logBuffer[logId]
-
-			if !ok {
+		select {
+		case <-r.logQueueFlush:
+			if !flushed {
+				flushed = true
+				continue
+			}
+		default:
+			if len(r.logQueue) < r.config.maxLogQueueSize {
 				continue
 			}
 
-			logs[i] = log
+			logs = make([]Log, r.config.maxLogQueueSize)
+
+			for i := 0; i < r.config.maxLogQueueSize; i++ {
+				var logId = <-r.logQueue
+
+				var log, ok = r.logBuffer[logId]
+
+				if !ok {
+					continue
+				}
+
+				logs[i] = log
+			}
 		}
 
 		r.dispatcher.DispatchLogs(logs, &r.writingChannels)
+		logs = make([]Log, 0)
 	}
 }
 
 func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	for {
-		if len(r.writingChannels.Stdout) < r.config.maxStdoutWriterChannelItems {
-			continue
-		}
+	var flushed = false
 
+	for {
 		var operations []Operation
 
 		var logs []Log
 
-		for i := 0; i < r.config.maxStdoutWriterChannelItems; i++ {
-			var writable = <-r.writingChannels.Stdout
+		if flushed {
+			for {
+				select {
+				case writable := <-r.writingChannels.Stdout:
+					collectWritable(writable, &operations, &logs)
+				default:
+					var stop = len(r.logQueue) == 0 && len(r.operationQueue) == 0
 
-			if operation, ok := writable.(Operation); ok {
-				operations = append(operations, operation)
-			} else if log, ok := writable.(Log); ok {
-				logs = append(logs, log)
+					if stop {
+						close(r.writingChannels.Stdout)
+						return
+					}
+
+					break
+				}
+			}
+		}
+
+		select {
+		case flushed, _ = <-r.writingChannelsFlush.Stdout:
+			if !flushed {
+				flushed = true
+				continue
+			}
+		default:
+			if len(r.writingChannels.Stdout) < r.config.maxStdoutWriterChannelItems {
+				continue
 			}
 
+			for i := 0; i < r.config.maxStdoutWriterChannelItems; i++ {
+				collectWritable(<-r.writingChannels.Stdout, &operations, &logs)
+			}
 		}
 
-		if len(operations) > 0 {
-			r.writer.WriteOperationsToStdout(operations, r)
-		}
-
-		if len(logs) > 0 {
-			r.writer.WriteLogsToStdout(logs, r)
-		}
+		writeToStream("stdout", &operations, &logs, r)
 	}
 }
 
 func (r *Roga) consumeFileWrites(wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	for {
-		if len(r.writingChannels.File) < r.config.maxFileWriterChannelItems {
-			continue
-		}
+	var flushed = false
 
+	for {
 		var operations []Operation
 
 		var logs []Log
 
-		for i := 0; i < r.config.maxFileWriterChannelItems; i++ {
-			var writable = <-r.writingChannels.File
+		if flushed {
+			for {
+				select {
+				case writable := <-r.writingChannels.File:
+					collectWritable(writable, &operations, &logs)
+				default:
+					var stop = len(r.logQueue) == 0 && len(r.operationQueue) == 0
 
-			if operation, ok := writable.(Operation); ok {
-				operations = append(operations, operation)
-			} else if log, ok := writable.(Log); ok {
-				logs = append(logs, log)
+					if stop {
+						close(r.writingChannels.File)
+						return
+					}
+
+					break
+				}
 			}
 		}
 
-		if len(operations) > 0 {
-			r.writer.WriteOperationsToFile(operations, r)
+		select {
+		case flushed, _ = <-r.writingChannelsFlush.File:
+			if !flushed {
+				flushed = true
+				continue
+			}
+		default:
+			if len(r.writingChannels.File) < r.config.maxFileWriterChannelItems {
+				continue
+			}
+			for i := 0; i < r.config.maxFileWriterChannelItems; i++ {
+				collectWritable(<-r.writingChannels.File, &operations, &logs)
+			}
 		}
 
-		if len(logs) > 0 {
-			r.writer.WriteLogsToFile(logs, r)
-		}
+		writeToStream("file", &operations, &logs, r)
 	}
 }
 
 func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	for {
-		if len(r.writingChannels.External) < r.config.maxExternalWriterChannelItems {
-			continue
-		}
+	var flushed = false
 
+	for {
 		var operations []Operation
 
 		var logs []Log
 
-		for i := 0; i < r.config.maxExternalWriterChannelItems; i++ {
-			var writable = <-r.writingChannels.External
+		if flushed {
+			for {
+				select {
+				case writable := <-r.writingChannels.External:
+					collectWritable(writable, &operations, &logs)
+				default:
+					var stop = len(r.logQueue) == 0 && len(r.operationQueue) == 0
 
-			if operation, ok := writable.(Operation); ok {
-				operations = append(operations, operation)
-			} else if log, ok := writable.(Log); ok {
-				logs = append(logs, log)
+					if stop {
+						close(r.writingChannels.External)
+						return
+					}
+
+					break
+				}
 			}
 		}
 
-		if len(operations) > 0 {
-			r.writer.WriteOperationsToExternal(operations, r)
+		select {
+		case flushed, _ = <-r.writingChannelsFlush.External:
+			if !flushed {
+				flushed = true
+				continue
+			}
+		default:
+			if len(r.writingChannels.External) < r.config.maxExternalWriterChannelItems {
+				continue
+			}
+
+			for i := 0; i < r.config.maxExternalWriterChannelItems; i++ {
+				collectWritable(<-r.writingChannels.External, &operations, &logs)
+			}
 		}
 
-		if len(logs) > 0 {
-			r.writer.WriteLogsToExternal(logs, r)
-		}
+		writeToStream("external", &operations, &logs, r)
 	}
 }
 
@@ -415,6 +590,9 @@ func (r *Roga) consumeChannels() {
 	go r.consumeOperationQueue()
 
 	go func() {
+		r.consumptionSync.Add(1)
+		defer r.consumptionSync.Done()
+
 		var wg sync.WaitGroup
 
 		for i := 0; i < r.config.maxStdoutWriters; i++ {
@@ -425,6 +603,9 @@ func (r *Roga) consumeChannels() {
 	}()
 
 	go func() {
+		r.consumptionSync.Add(1)
+		defer r.consumptionSync.Done()
+
 		var wg sync.WaitGroup
 
 		for i := 0; i < r.config.maxFileWriters; i++ {
@@ -435,6 +616,9 @@ func (r *Roga) consumeChannels() {
 	}()
 
 	go func() {
+		r.consumptionSync.Add(1)
+		defer r.consumptionSync.Done()
+
 		var wg sync.WaitGroup
 
 		for i := 0; i < r.config.maxExternalWriters; i++ {
@@ -443,4 +627,80 @@ func (r *Roga) consumeChannels() {
 
 		wg.Wait()
 	}()
+}
+
+func addWritableToQueue(writable Writable, r *Roga) {
+	if operation, ok := writable.(Operation); ok {
+		var _, alreadyInBuffer = r.operationBuffer[operation.Id]
+
+		if !alreadyInBuffer {
+			return
+		}
+
+		r.operationBuffer[operation.Id] = operation
+		r.operationQueue <- operation.Id
+	} else if log, ok := writable.(Log); ok {
+		r.logBuffer[log.Id] = log
+		r.logQueue <- log.Id
+	}
+}
+
+func collectWritable(writable Writable, operations *[]Operation, logs *[]Log) {
+	if operation, ok := writable.(Operation); ok {
+		*operations = append(*operations, operation)
+	} else if log, ok := writable.(Log); ok {
+		*logs = append(*logs, log)
+	}
+}
+
+func writeToStream(stream string, operations *[]Operation, logs *[]Log, r *Roga) {
+	var hasOperations = len(*operations) > 0
+	var hasLogs = len(*logs) > 0
+
+	switch stream {
+	case "stdout":
+		if hasOperations {
+			r.writer.WriteOperationsToStdout(*operations, r)
+		}
+
+		if hasLogs {
+			r.writer.WriteLogsToStdout(*logs, r)
+		}
+	case "file":
+		if hasOperations {
+			var file, cleanupFunc, err = getLogFileDescriptor(r, true)
+
+			if err == nil {
+				r.writer.WriteOperationsToFile(*operations, file, r)
+
+				cleanupFunc(file)
+			}
+		}
+
+		if hasLogs {
+			var file, cleanupFunc, err = getLogFileDescriptor(r)
+
+			if err == nil {
+				r.writer.WriteLogsToFile(*logs, file, r)
+
+				cleanupFunc(file)
+			}
+		}
+	case "external":
+		if hasOperations {
+			r.writer.WriteOperationsToExternal(*operations, r)
+		}
+
+		if hasLogs {
+			r.writer.WriteLogsToExternal(*logs, r)
+		}
+	}
+
+	if hasOperations {
+		*operations = make([]Operation, 0)
+	}
+
+	if hasLogs {
+		*logs = make([]Log, 0)
+	}
 }

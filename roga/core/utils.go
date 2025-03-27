@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"github.com/dullkingsman/go-pkg/utils"
 	"os"
 	"runtime"
 	"strconv"
@@ -225,4 +226,75 @@ func (a OperationArgs) ToOperation() Operation {
 		Description: a.Description,
 		Actor:       a.Actor,
 	}
+}
+
+// getCurrentTimeRoundedTo rounds the current time to the nearest given interval (in nanoseconds)
+func getCurrentTimeRoundedTo(interval time.Duration) time.Time {
+	now := time.Now()
+
+	// Calculate the nearest multiple of the interval
+	unixTime := now.UnixNano()                                        // Convert time to nanoseconds
+	roundedTimeNano := (unixTime / int64(interval)) * int64(interval) // Round down
+
+	// If past halfway, round up
+	if unixTime%int64(interval) >= int64(interval)/2 {
+		roundedTimeNano += int64(interval)
+	}
+
+	// Convert nanoseconds back to time.Time
+	roundedTime := time.Unix(0, roundedTimeNano)
+
+	return roundedTime
+}
+
+// getLogFileDescriptor returns a file descriptor for the given file name in the log base directory
+func getLogFileDescriptor(r *Roga, operations ...bool) (file *os.File, cleanupFunc func(file *os.File), err error) {
+	var isOperations = false
+
+	if len(operations) > 0 {
+		isOperations = operations[0]
+	}
+
+	var logsBasePath = r.config.fileWriterBasePath +
+		getCurrentTimeRoundedTo(
+			r.config.fileLogsDirectoryGranularity,
+		).UTC().Format(
+			r.config.fileLogsDirectoryFormatLayout,
+		)
+
+	err = os.MkdirAll(logsBasePath, os.ModePerm)
+
+	if err != nil {
+		utils.LogError("roga:file-descriptor", err.Error())
+	}
+
+	var filePath = logsBasePath + "/"
+
+	if isOperations {
+		filePath += r.config.operationsFileName
+	} else {
+		filePath += r.config.logsFileName
+	}
+
+	file, err = os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+
+	if err != nil || file == nil {
+		if err == nil {
+			err = errors.New("could not open file " + utils.GreyString(filePath))
+		}
+
+		utils.LogError("roga:file-descriptor", err.Error())
+
+		return
+	}
+
+	cleanupFunc = func(file *os.File) {
+		var err = file.Close()
+
+		if err != nil {
+			utils.LogError("roga:file-descriptor", err.Error())
+		}
+	}
+
+	return
 }

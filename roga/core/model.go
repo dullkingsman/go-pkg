@@ -2,26 +2,33 @@ package core
 
 import (
 	"github.com/google/uuid"
+	"os"
 	"sync"
 	"time"
 )
 
 type (
 	Roga struct {
-		operationBuffer   map[uuid.UUID]Operation
-		logBuffer         map[uuid.UUID]Log
-		operationQueue    chan uuid.UUID
-		logQueue          chan uuid.UUID
-		metricsLock       *sync.RWMutex
-		productionChannel chan Writable
-		rootOperation     Operation
-		writingChannels   WritingChannels
-		context           Context
-		producer          Producer
-		monitor           Monitor
-		dispatcher        Dispatcher
-		writer            Writer
-		config            InstanceConfig
+		operationBuffer        map[uuid.UUID]Operation
+		logBuffer              map[uuid.UUID]Log
+		productionChannel      chan Writable
+		operationQueue         chan uuid.UUID
+		logQueue               chan uuid.UUID
+		writingChannels        WritingChannels
+		productionChannelFlush chan bool
+		operationQueueFlush    chan bool
+		logQueueFlush          chan bool
+		writingChannelsFlush   WritingChannelsFlush
+		metricsLock            *sync.RWMutex
+		consumptionSync        *sync.WaitGroup
+		started                bool
+		rootOperation          Operation
+		context                Context
+		producer               Producer
+		monitor                Monitor
+		dispatcher             Dispatcher
+		writer                 Writer
+		config                 InstanceConfig
 	}
 
 	Config struct {
@@ -47,6 +54,11 @@ type (
 		writeToStdout                 bool
 		writeToFile                   bool
 		writeToExternal               bool
+		fileWriterBasePath            string
+		fileLogsDirectoryGranularity  time.Duration
+		fileLogsDirectoryFormatLayout string // time format layout
+		operationsFileName            string
+		logsFileName                  string
 	}
 
 	Producer interface {
@@ -81,10 +93,10 @@ type (
 
 	Writer interface {
 		WriteOperationsToStdout(items []Operation, r *Roga)
-		WriteOperationsToFile(items []Operation, r *Roga)
+		WriteOperationsToFile(items []Operation, file *os.File, r *Roga)
 		WriteOperationsToExternal(items []Operation, r *Roga)
 		WriteLogsToStdout(items []Log, r *Roga)
-		WriteLogsToFile(items []Log, r *Roga)
+		WriteLogsToFile(items []Log, file *os.File, r *Roga)
 		WriteLogsToExternal(items []Log, r *Roga)
 	}
 
@@ -98,6 +110,12 @@ type (
 		Stdout   chan Writable
 		File     chan Writable
 		External chan Writable
+	}
+
+	WritingChannelsFlush struct {
+		Stdout   chan bool
+		File     chan bool
+		External chan bool
 	}
 
 	OperationArgs struct {

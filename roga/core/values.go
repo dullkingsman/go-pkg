@@ -38,9 +38,24 @@ const (
 	DefaultExternalWriterChannelItems int = 1000
 
 	DefaultSystemStatsCheckInterval time.Duration = 10
+
+	DefaultFileWriterBasePath            = "./logs"
+	DefaultFileLogsDirectoryGranularity  = time.Hour
+	DefaultFileLogsDirectoryFormatLayout = "2006-01-02_15-04-05"
+
+	DefaultWriteToStdout   = true
+	DefaultWriteToFile     = true
+	DefaultWriteToExternal = true
+
+	DefaultOperationsFileName = "operations.jsonl"
+	DefaultLogsFileName       = "logs.jsonl"
 )
 
 var (
+	DefaultMaxStdoutWriters   = 2 * runtime.NumCPU()
+	DefaultMaxFileWriters     = 2 * runtime.NumCPU()
+	DefaultMaxExternalWriters = 4 * runtime.NumCPU()
+
 	defaultOperationContext = Context{
 		Environment: Environment{
 			ApplicationEnvironment: ApplicationEnvironment{
@@ -72,12 +87,17 @@ var (
 		maxStdoutWriterChannelItems:   DefaultStdoutWriterChannelItems,
 		maxFileWriterChannelItems:     DefaultFileWriterChannelItems,
 		maxExternalWriterChannelItems: DefaultExternalWriterChannelItems,
-		maxStdoutWriters:              2 * runtime.NumCPU(),
-		maxFileWriters:                2 * runtime.NumCPU(),
-		maxExternalWriters:            4 * runtime.NumCPU(),
+		maxStdoutWriters:              DefaultMaxStdoutWriters,
+		maxFileWriters:                DefaultMaxFileWriters,
+		maxExternalWriters:            DefaultMaxExternalWriters,
 		systemStatsCheckInterval:      DefaultSystemStatsCheckInterval,
-		writeToStdout:                 true,
-		writeToFile:                   true,
-		writeToExternal:               true,
+		writeToStdout:                 DefaultWriteToStdout,
+		writeToFile:                   DefaultWriteToFile,
+		writeToExternal:               DefaultWriteToExternal,
+		fileWriterBasePath:            DefaultFileWriterBasePath,
+		fileLogsDirectoryGranularity:  DefaultFileLogsDirectoryGranularity,
+		fileLogsDirectoryFormatLayout: DefaultFileLogsDirectoryFormatLayout,
+		operationsFileName:            DefaultOperationsFileName,
+		logsFileName:                  DefaultLogsFileName,
 	}
 )
