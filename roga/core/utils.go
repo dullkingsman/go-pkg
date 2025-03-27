@@ -298,3 +298,79 @@ func getLogFileDescriptor(r *Roga, operations ...bool) (file *os.File, cleanupFu
 
 	return
 }
+
+func addWritableToQueue(writable Writable, r *Roga) {
+	if operation, ok := writable.(Operation); ok {
+		var _, alreadyInBuffer = r.operationBuffer[operation.Id]
+
+		if !alreadyInBuffer {
+			return
+		}
+
+		r.operationBuffer[operation.Id] = operation
+		r.operationQueue <- operation.Id
+	} else if log, ok := writable.(Log); ok {
+		r.logBuffer[log.Id] = log
+		r.logQueue <- log.Id
+	}
+}
+
+func collectWritable(writable Writable, operations *[]Operation, logs *[]Log) {
+	if operation, ok := writable.(Operation); ok {
+		*operations = append(*operations, operation)
+	} else if log, ok := writable.(Log); ok {
+		*logs = append(*logs, log)
+	}
+}
+
+func writeToStream(stream string, operations *[]Operation, logs *[]Log, r *Roga) {
+	var hasOperations = len(*operations) > 0
+	var hasLogs = len(*logs) > 0
+
+	switch stream {
+	case "stdout":
+		if hasOperations {
+			r.writer.WriteOperationsToStdout(*operations, r)
+		}
+
+		if hasLogs {
+			r.writer.WriteLogsToStdout(*logs, r)
+		}
+	case "file":
+		if hasOperations {
+			var file, cleanupFunc, err = getLogFileDescriptor(r, true)
+
+			if err == nil {
+				r.writer.WriteOperationsToFile(*operations, file, r)
+
+				cleanupFunc(file)
+			}
+		}
+
+		if hasLogs {
+			var file, cleanupFunc, err = getLogFileDescriptor(r)
+
+			if err == nil {
+				r.writer.WriteLogsToFile(*logs, file, r)
+
+				cleanupFunc(file)
+			}
+		}
+	case "external":
+		if hasOperations {
+			r.writer.WriteOperationsToExternal(*operations, r)
+		}
+
+		if hasLogs {
+			r.writer.WriteLogsToExternal(*logs, r)
+		}
+	}
+
+	if hasOperations {
+		*operations = make([]Operation, 0)
+	}
+
+	if hasLogs {
+		*logs = make([]Log, 0)
+	}
+}
