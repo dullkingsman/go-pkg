@@ -9,6 +9,7 @@ import (
 
 type (
 	Roga struct {
+		monitorControls monitorControls
 		buffers         buffers
 		channels        channels
 		metricsLock     *sync.RWMutex
@@ -102,6 +103,12 @@ type (
 	buffers struct {
 		operations map[uuid.UUID]Operation
 		logs       map[uuid.UUID]Log
+	}
+
+	monitorControls struct {
+		stop   chan bool
+		pause  chan bool
+		resume chan bool
 	}
 
 	channels struct {

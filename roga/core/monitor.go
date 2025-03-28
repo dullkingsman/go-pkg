@@ -1,45 +1,50 @@
 package core
 
-import (
-	"time"
-)
+import "time"
 
 func (r *Roga) monitorAndUpdateSystemMetrics() {
 	r.consumptionSync.Add(1)
 	defer r.consumptionSync.Done()
 
 	for {
-		var (
-			cpuUsage, cpuErr                   = r.monitor.GetCPUUsage()
-			totalMemory, freeMemory, memoryErr = r.monitor.GetMemoryStats()
-			totalSwap, freeSwap, swapErr       = r.monitor.GetSwapStats()
-			totalDisk, freeDisk, diskErr       = r.monitor.GetDiskStats("/")
-		)
+		select {
+		case <-r.monitorControls.stop:
+			return
+		case <-r.monitorControls.pause:
+			<-r.monitorControls.resume
+		default:
+			var (
+				cpuUsage, cpuErr                   = r.monitor.GetCPUUsage()
+				totalMemory, freeMemory, memoryErr = r.monitor.GetMemoryStats()
+				totalSwap, freeSwap, swapErr       = r.monitor.GetSwapStats()
+				totalDisk, freeDisk, diskErr       = r.monitor.GetDiskStats("/")
+			)
 
-		r.metricsLock.Lock()
+			r.metricsLock.Lock()
 
-		if cpuErr == nil {
-			r.context.Environment.SystemEnvironment.CpuUsage = cpuUsage
+			if cpuErr == nil {
+				r.context.Environment.SystemEnvironment.CpuUsage = cpuUsage
+			}
+
+			if memoryErr == nil {
+				r.context.SystemSpecifications.Memory = totalMemory
+				r.context.Environment.SystemEnvironment.AvailableMemory = freeMemory
+			}
+
+			if swapErr == nil {
+				r.context.SystemSpecifications.SwapSize = totalSwap
+				r.context.Environment.SystemEnvironment.AvailableSwap = freeSwap
+			}
+
+			if diskErr == nil {
+				r.context.SystemSpecifications.DiskSize = totalDisk
+				r.context.Environment.SystemEnvironment.AvailableDisk = freeDisk
+			}
+
+			r.metricsLock.Unlock()
+
+			time.Sleep(r.config.systemStatsCheckInterval * time.Second)
 		}
-
-		if memoryErr == nil {
-			r.context.SystemSpecifications.Memory = totalMemory
-			r.context.Environment.SystemEnvironment.AvailableMemory = freeMemory
-		}
-
-		if swapErr == nil {
-			r.context.SystemSpecifications.SwapSize = totalSwap
-			r.context.Environment.SystemEnvironment.AvailableSwap = freeSwap
-		}
-
-		if diskErr == nil {
-			r.context.SystemSpecifications.DiskSize = totalDisk
-			r.context.Environment.SystemEnvironment.AvailableDisk = freeDisk
-		}
-
-		r.metricsLock.Unlock()
-
-		time.Sleep(r.config.systemStatsCheckInterval * time.Second)
 	}
 }
 
