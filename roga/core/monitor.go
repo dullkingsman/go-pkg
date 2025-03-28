@@ -2,16 +2,36 @@ package core
 
 import "time"
 
+func (r *Roga) monitorAndFlushIdleChannels() {
+	r.consumptionSync.Add(1)
+	defer r.consumptionSync.Done()
+
+	for {
+		select {
+		case <-r.idleChannelMonitorControls.stop:
+			return
+		case <-r.idleChannelMonitorControls.pause:
+			<-r.idleChannelMonitorControls.resume
+		default:
+			if r.lastWrite.Before(time.Now().Add(-r.config.idleChannelFlushInterval * time.Second)) {
+				r.Flush()
+			}
+
+			time.Sleep(r.config.idleChannelFlushInterval * time.Second)
+		}
+	}
+}
+
 func (r *Roga) monitorAndUpdateSystemMetrics() {
 	r.consumptionSync.Add(1)
 	defer r.consumptionSync.Done()
 
 	for {
 		select {
-		case <-r.monitorControls.stop:
+		case <-r.metricMonitorControls.stop:
 			return
-		case <-r.monitorControls.pause:
-			<-r.monitorControls.resume
+		case <-r.metricMonitorControls.pause:
+			<-r.metricMonitorControls.resume
 		default:
 			var (
 				cpuUsage, cpuErr                   = r.monitor.GetCPUUsage()

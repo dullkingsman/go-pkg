@@ -37,7 +37,9 @@ const (
 	DefaultFileWriterChannelItems     int = 1000
 	DefaultExternalWriterChannelItems int = 1000
 
-	DefaultSystemStatsCheckInterval time.Duration = 10
+	DefaultSystemStatsCheckInterval = 10 // in seconds
+
+	DefaultIdleChannelFlushInterval = 10 // in seconds
 
 	DefaultFileWriterBasePath            = "./logs"
 	DefaultFileLogsDirectoryGranularity  = time.Hour
@@ -90,6 +92,7 @@ var (
 		maxStdoutWriters:              DefaultMaxStdoutWriters,
 		maxFileWriters:                DefaultMaxFileWriters,
 		maxExternalWriters:            DefaultMaxExternalWriters,
+		idleChannelFlushInterval:      DefaultIdleChannelFlushInterval,
 		systemStatsCheckInterval:      DefaultSystemStatsCheckInterval,
 		writeToStdout:                 DefaultWriteToStdout,
 		writeToFile:                   DefaultWriteToFile,

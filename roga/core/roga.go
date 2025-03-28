@@ -53,7 +53,7 @@ func Init(config ...Config) Roga {
 			},
 			Actor: Actor{Type: 1},
 		},
-		monitorControls: monitorControls{
+		metricMonitorControls: monitorControls{
 			stop:   make(chan bool),
 			pause:  make(chan bool),
 			resume: make(chan bool),
@@ -109,23 +109,39 @@ func Init(config ...Config) Roga {
 	return instance
 }
 
-func (r *Roga) StopMonitoring() {
-	r.ResumeMonitoring()
-	r.monitorControls.stop <- true
+func (r *Roga) StopSystemMonitoring() {
+	r.ResumeSystemMonitoring()
+	r.metricMonitorControls.stop <- true
 }
 
-func (r *Roga) PauseMonitoring() {
-	r.monitorControls.pause <- true
+func (r *Roga) PauseSystemMonitoring() {
+	r.metricMonitorControls.pause <- true
 }
 
-func (r *Roga) ResumeMonitoring() {
-	r.monitorControls.resume <- true
+func (r *Roga) ResumeSystemMonitoring() {
+	r.metricMonitorControls.resume <- true
+}
+
+func (r *Roga) StopIdleChannelMonitoring() {
+	r.ResumeIdleChannelMonitoring()
+	r.metricMonitorControls.stop <- true
+}
+
+func (r *Roga) PauseIdleChannelMonitoring() {
+	r.metricMonitorControls.pause <- true
+}
+
+func (r *Roga) ResumeIdleChannelMonitoring() {
+	r.metricMonitorControls.resume <- true
 }
 
 func (r *Roga) Start() {
 	if !r.started {
 		r.started = true
-		r.consumeChannels()
+
+		r.startingMonitoring()
+
+		r.startConsuming()
 	}
 }
 
@@ -140,9 +156,7 @@ func (r *Roga) Flush() {
 	r.channels.flush.production <- true
 }
 
-func (r *Roga) Stop() {
-	r.StopMonitoring()
-
+func (r *Roga) StopConsuming() {
 	r.channels.stop.writing.stdout <- true
 	r.channels.stop.writing.file <- true
 	r.channels.stop.writing.external <- true
@@ -151,6 +165,14 @@ func (r *Roga) Stop() {
 	r.channels.stop.queue.log <- true
 
 	r.channels.stop.production <- true
+}
+
+func (r *Roga) Stop() {
+	r.StopIdleChannelMonitoring()
+
+	r.StopSystemMonitoring()
+
+	r.StopConsuming()
 }
 
 func (r *Roga) Recover() {
@@ -329,9 +351,13 @@ func (o *Operation) EndOperation(measurementFinalizer ...MeasurementHandler) {
 	)
 }
 
-func (r *Roga) consumeChannels() {
-	go r.monitorAndUpdateSystemMetrics()
+func (r *Roga) startingMonitoring() {
+	go r.monitorAndFlushIdleChannels()
 
+	go r.monitorAndUpdateSystemMetrics()
+}
+
+func (r *Roga) startConsuming() {
 	go r.consumeProductionChannel()
 
 	go r.consumeLogQueue()

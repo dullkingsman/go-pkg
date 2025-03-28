@@ -373,4 +373,10 @@ func writeToStream(stream string, operations *[]Operation, logs *[]Log, r *Roga)
 	if hasLogs {
 		*logs = make([]Log, 0)
 	}
+
+	r.lastWriteLock.Lock()
+
+	r.lastWrite = time.Now().UTC()
+
+	r.lastWriteLock.Unlock()
 }

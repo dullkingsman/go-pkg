@@ -9,20 +9,22 @@ import (
 
 type (
 	Roga struct {
-		monitorControls monitorControls
-		buffers         buffers
-		channels        channels
-		metricsLock     *sync.RWMutex
-		consumptionSync *sync.WaitGroup
-		started         bool
-		lastWrite       time.Time
-		rootOperation   Operation
-		context         Context
-		producer        Producer
-		monitor         Monitor
-		dispatcher      Dispatcher
-		writer          Writer
-		config          InstanceConfig
+		metricMonitorControls      monitorControls
+		idleChannelMonitorControls monitorControls
+		buffers                    buffers
+		channels                   channels
+		metricsLock                *sync.RWMutex
+		consumptionSync            *sync.WaitGroup
+		started                    bool
+		lastWriteLock              *sync.RWMutex
+		lastWrite                  time.Time
+		rootOperation              Operation
+		context                    Context
+		producer                   Producer
+		monitor                    Monitor
+		dispatcher                 Dispatcher
+		writer                     Writer
+		config                     InstanceConfig
 	}
 
 	Config struct {
@@ -44,6 +46,7 @@ type (
 		maxStdoutWriters              int
 		maxFileWriters                int
 		maxExternalWriters            int
+		idleChannelFlushInterval      time.Duration
 		systemStatsCheckInterval      time.Duration // in seconds
 		writeToStdout                 bool
 		writeToFile                   bool
