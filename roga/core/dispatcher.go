@@ -18,7 +18,7 @@ func (d DefaultDispatcher) AddToLogQueue(logs []Log, queue *chan<- uuid.UUID) {
 	}
 }
 
-func (d DefaultDispatcher) DispatchOperations(operations []Operation, writingChannels *WritingChannels) []uuid.UUID {
+func (d DefaultDispatcher) DispatchOperations(operations []Operation, writingChannels *writingChannels) []uuid.UUID {
 	if writingChannels == nil {
 		var returnable = make([]uuid.UUID, len(operations))
 
@@ -30,15 +30,15 @@ func (d DefaultDispatcher) DispatchOperations(operations []Operation, writingCha
 	}
 
 	for _, operation := range operations {
-		writingChannels.Stdout <- operation
-		writingChannels.File <- operation
-		writingChannels.External <- operation
+		writingChannels.stdout <- operation
+		writingChannels.file <- operation
+		writingChannels.external <- operation
 	}
 
 	return nil
 }
 
-func (d DefaultDispatcher) DispatchLogs(logs []Log, channels *WritingChannels) []uuid.UUID {
+func (d DefaultDispatcher) DispatchLogs(logs []Log, channels *writingChannels) []uuid.UUID {
 	if channels == nil {
 		var returnable = make([]uuid.UUID, len(logs))
 
@@ -50,9 +50,9 @@ func (d DefaultDispatcher) DispatchLogs(logs []Log, channels *WritingChannels) [
 	}
 
 	for _, log := range logs {
-		channels.Stdout <- log
-		channels.File <- log
-		channels.External <- log
+		channels.stdout <- log
+		channels.file <- log
+		channels.external <- log
 	}
 
 	return nil

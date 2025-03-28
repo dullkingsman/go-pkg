@@ -9,26 +9,19 @@ import (
 
 type (
 	Roga struct {
-		operationBuffer        map[uuid.UUID]Operation
-		logBuffer              map[uuid.UUID]Log
-		productionChannel      chan Writable
-		operationQueue         chan uuid.UUID
-		logQueue               chan uuid.UUID
-		writingChannels        WritingChannels
-		productionChannelFlush chan bool
-		operationQueueFlush    chan bool
-		logQueueFlush          chan bool
-		writingChannelsFlush   WritingChannelsFlush
-		metricsLock            *sync.RWMutex
-		consumptionSync        *sync.WaitGroup
-		started                bool
-		rootOperation          Operation
-		context                Context
-		producer               Producer
-		monitor                Monitor
-		dispatcher             Dispatcher
-		writer                 Writer
-		config                 InstanceConfig
+		buffers         buffers
+		channels        channels
+		metricsLock     *sync.RWMutex
+		consumptionSync *sync.WaitGroup
+		started         bool
+		lastWrite       time.Time
+		rootOperation   Operation
+		context         Context
+		producer        Producer
+		monitor         Monitor
+		dispatcher      Dispatcher
+		writer          Writer
+		config          InstanceConfig
 	}
 
 	Config struct {
@@ -83,11 +76,11 @@ type (
 		AddToLogQueue(logs []Log, queue *chan<- uuid.UUID)
 		DispatchOperations(
 			operations []Operation,
-			channels *WritingChannels,
+			channels *writingChannels,
 		) []uuid.UUID // return the ids of ones that were not dispatched
 		DispatchLogs(
 			logs []Log,
-			channels *WritingChannels,
+			channels *writingChannels,
 		) []uuid.UUID // return the ids of ones that were not dispatched
 	}
 
@@ -106,16 +99,49 @@ type (
 
 	MeasurementHandler func(*map[string]float64)
 
-	WritingChannels struct {
-		Stdout   chan Writable
-		File     chan Writable
-		External chan Writable
+	buffers struct {
+		operations map[uuid.UUID]Operation
+		logs       map[uuid.UUID]Log
 	}
 
-	WritingChannelsFlush struct {
-		Stdout   chan bool
-		File     chan bool
-		External chan bool
+	channels struct {
+		operational channelGroup
+		flush       actionChannelGroup
+		stop        actionChannelGroup
+	}
+
+	channelGroup struct {
+		production chan Writable
+		queue      queueChannels
+		writing    writingChannels
+	}
+
+	queueChannels struct {
+		operation chan uuid.UUID
+		log       chan uuid.UUID
+	}
+
+	writingChannels struct {
+		stdout   chan Writable
+		file     chan Writable
+		external chan Writable
+	}
+
+	actionChannelGroup struct {
+		production chan bool
+		queue      queueActionChannels
+		writing    writingActionChannels
+	}
+
+	queueActionChannels struct {
+		operation chan bool
+		log       chan bool
+	}
+
+	writingActionChannels struct {
+		stdout   chan bool
+		file     chan bool
+		external chan bool
 	}
 
 	OperationArgs struct {

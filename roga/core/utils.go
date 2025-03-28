@@ -301,17 +301,17 @@ func getLogFileDescriptor(r *Roga, operations ...bool) (file *os.File, cleanupFu
 
 func addWritableToQueue(writable Writable, r *Roga) {
 	if operation, ok := writable.(Operation); ok {
-		var _, alreadyInBuffer = r.operationBuffer[operation.Id]
+		var _, alreadyInBuffer = r.buffers.operations[operation.Id]
 
 		if !alreadyInBuffer {
 			return
 		}
 
-		r.operationBuffer[operation.Id] = operation
-		r.operationQueue <- operation.Id
+		r.buffers.operations[operation.Id] = operation
+		r.channels.operational.queue.operation <- operation.Id
 	} else if log, ok := writable.(Log); ok {
-		r.logBuffer[log.Id] = log
-		r.logQueue <- log.Id
+		r.buffers.logs[log.Id] = log
+		r.channels.operational.queue.log <- log.Id
 	}
 }
 

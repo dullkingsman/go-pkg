@@ -66,7 +66,7 @@ func (d DefaultWriter) WriteOperationsToExternal(items []Operation, r *Roga) {
 
 func (d DefaultWriter) WriteLogsToStdout(items []Log, r *Roga) {
 	for _, item := range items {
-		var operation = r.operationBuffer[item.OperationId]
+		var operation = r.buffers.operations[item.OperationId]
 
 		switch item.Level {
 		case LevelFatal:

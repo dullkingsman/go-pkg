@@ -53,13 +53,43 @@ func Init(config ...Config) Roga {
 			},
 			Actor: Actor{Type: 1},
 		},
-		logQueue:          make(chan uuid.UUID, _config.Instance.maxLogQueueSize),
-		operationQueue:    make(chan uuid.UUID, _config.Instance.maxOperationQueueSize),
-		productionChannel: make(chan Writable),
-		writingChannels: WritingChannels{
-			Stdout:   make(chan Writable),
-			File:     make(chan Writable),
-			External: make(chan Writable),
+		channels: channels{
+			operational: channelGroup{
+				production: make(chan Writable, _config.Instance.maxProductionChannelItems),
+				queue: queueChannels{
+					operation: make(chan uuid.UUID, _config.Instance.maxOperationQueueSize),
+					log:       make(chan uuid.UUID, _config.Instance.maxLogQueueSize),
+				},
+				writing: writingChannels{
+					stdout:   make(chan Writable, _config.Instance.maxStdoutWriterChannelItems),
+					file:     make(chan Writable, _config.Instance.maxFileWriterChannelItems),
+					external: make(chan Writable, _config.Instance.maxExternalWriterChannelItems),
+				},
+			},
+			flush: actionChannelGroup{
+				production: make(chan bool),
+				queue: queueActionChannels{
+					operation: make(chan bool),
+					log:       make(chan bool),
+				},
+				writing: writingActionChannels{
+					stdout:   make(chan bool),
+					file:     make(chan bool),
+					external: make(chan bool),
+				},
+			},
+			stop: actionChannelGroup{
+				production: make(chan bool),
+				queue: queueActionChannels{
+					operation: make(chan bool),
+					log:       make(chan bool),
+				},
+				writing: writingActionChannels{
+					stdout:   make(chan bool),
+					file:     make(chan bool),
+					external: make(chan bool),
+				},
+			},
 		},
 	}
 
@@ -78,14 +108,14 @@ func (r *Roga) Start() {
 }
 
 func (r *Roga) Recover() {
-	r.writingChannelsFlush.Stdout <- true
-	r.writingChannelsFlush.File <- true
-	r.writingChannelsFlush.External <- true
+	r.channels.stop.writing.stdout <- true
+	r.channels.stop.writing.file <- true
+	r.channels.stop.writing.external <- true
 
-	r.operationQueueFlush <- true
-	r.logQueueFlush <- true
+	r.channels.stop.queue.operation <- true
+	r.channels.stop.queue.log <- true
 
-	r.productionChannelFlush <- true
+	r.channels.stop.production <- true
 
 	r.consumptionSync.Wait()
 
@@ -102,7 +132,7 @@ func (r *Roga) LogFatal(args LogArgs) {
 		&r.rootOperation,
 		r.context,
 		1,
-		&r.productionChannel,
+		&r.channels.operational.production,
 	)
 }
 
@@ -112,7 +142,7 @@ func (r *Roga) LogError(args LogArgs) {
 		&r.rootOperation,
 		r.context,
 		1,
-		&r.productionChannel,
+		&r.channels.operational.production,
 	)
 }
 
@@ -122,7 +152,7 @@ func (r *Roga) LogWarn(args LogArgs) {
 		&r.rootOperation,
 		r.context,
 		1,
-		&r.productionChannel,
+		&r.channels.operational.production,
 	)
 }
 
@@ -132,7 +162,7 @@ func (r *Roga) LogInfo(args LogArgs) {
 		&r.rootOperation,
 		r.context,
 		1,
-		&r.productionChannel,
+		&r.channels.operational.production,
 	)
 }
 
@@ -142,7 +172,7 @@ func (r *Roga) LogDebug(args LogArgs) {
 		&r.rootOperation,
 		r.context,
 		1,
-		&r.productionChannel,
+		&r.channels.operational.production,
 	)
 }
 
@@ -157,7 +187,7 @@ func (r *Roga) BeginOperation(args OperationArgs, measurementInitiator ...Measur
 		args,
 		&r.rootOperation,
 		&_measurementInitiator,
-		&r.productionChannel,
+		&r.channels.operational.production,
 	)
 
 	operation.r = r
@@ -171,7 +201,7 @@ func (o *Operation) LogFatal(args LogArgs) {
 		o,
 		o.r.context,
 		1,
-		&o.r.productionChannel,
+		&o.r.channels.operational.production,
 	)
 
 	o.LogChildren = append(o.LogChildren, log.Id)
@@ -183,7 +213,7 @@ func (o *Operation) LogError(args LogArgs) {
 		o,
 		o.r.context,
 		1,
-		&o.r.productionChannel,
+		&o.r.channels.operational.production,
 	)
 
 	o.LogChildren = append(o.LogChildren, log.Id)
@@ -195,7 +225,7 @@ func (o *Operation) LogWarn(args LogArgs) {
 		o,
 		o.r.context,
 		1,
-		&o.r.productionChannel,
+		&o.r.channels.operational.production,
 	)
 
 	o.LogChildren = append(o.LogChildren, log.Id)
@@ -207,7 +237,7 @@ func (o *Operation) LogInfo(args LogArgs) {
 		o,
 		o.r.context,
 		1,
-		&o.r.productionChannel,
+		&o.r.channels.operational.production,
 	)
 
 	o.LogChildren = append(o.LogChildren, log.Id)
@@ -219,7 +249,7 @@ func (o *Operation) LogDebug(args LogArgs) {
 		o,
 		o.r.context,
 		1,
-		&o.r.productionChannel,
+		&o.r.channels.operational.production,
 	)
 
 	o.LogChildren = append(o.LogChildren, log.Id)
@@ -236,7 +266,7 @@ func (o *Operation) BeginOperation(args OperationArgs, measurementInitiator ...M
 		args,
 		o,
 		&_measurementInitiator,
-		&o.r.productionChannel,
+		&o.r.channels.operational.production,
 	)
 
 	o.OperationChildren = append(o.OperationChildren, operation.Id)
@@ -256,7 +286,7 @@ func (o *Operation) EndOperation(measurementFinalizer ...MeasurementHandler) {
 	o.r.producer.EndOperation(
 		o,
 		&_measurementFinalizer,
-		&o.r.productionChannel,
+		&o.r.channels.operational.production,
 	)
 }
 
@@ -319,13 +349,13 @@ func (r *Roga) consumeProductionChannel() {
 		if flushed {
 			for {
 				select {
-				case writable := <-r.productionChannel:
+				case writable := <-r.channels.operational.production:
 					addWritableToQueue(writable, r)
 				default:
-					close(r.productionChannel)
+					close(r.channels.operational.production)
 
-					r.operationQueueFlush <- true
-					r.logQueueFlush <- true
+					r.channels.stop.queue.operation <- true
+					r.channels.stop.queue.log <- true
 
 					return
 				}
@@ -333,18 +363,18 @@ func (r *Roga) consumeProductionChannel() {
 		}
 
 		select {
-		case <-r.productionChannelFlush:
+		case <-r.channels.stop.production:
 			if !flushed {
 				flushed = true
 				continue
 			}
 		default:
-			if len(r.productionChannel) < r.config.maxProductionChannelItems {
+			if len(r.channels.operational.production) < r.config.maxProductionChannelItems {
 				continue
 			}
 
 			for i := 0; i < r.config.maxProductionChannelItems; i++ {
-				addWritableToQueue(<-r.productionChannel, r)
+				addWritableToQueue(<-r.channels.operational.production, r)
 			}
 		}
 	}
@@ -362,8 +392,8 @@ func (r *Roga) consumeOperationQueue() {
 		if flushed {
 			for {
 				select {
-				case operationId := <-r.operationQueue:
-					var operation, ok = r.operationBuffer[operationId]
+				case operationId := <-r.channels.operational.queue.operation:
+					var operation, ok = r.buffers.operations[operationId]
 
 					if !ok {
 						continue
@@ -371,14 +401,14 @@ func (r *Roga) consumeOperationQueue() {
 
 					operations = append(operations, operation)
 				default:
-					var stop = len(r.productionChannel) == 0
+					var stop = len(r.channels.operational.production) == 0
 
-					r.writingChannelsFlush.Stdout <- true
-					r.writingChannelsFlush.File <- true
-					r.writingChannelsFlush.External <- true
+					r.channels.stop.writing.stdout <- true
+					r.channels.stop.writing.file <- true
+					r.channels.stop.writing.external <- true
 
 					if stop {
-						close(r.operationQueue)
+						close(r.channels.operational.queue.operation)
 						return
 					}
 
@@ -388,22 +418,22 @@ func (r *Roga) consumeOperationQueue() {
 		}
 
 		select {
-		case <-r.operationQueueFlush:
+		case <-r.channels.stop.queue.operation:
 			if !flushed {
 				flushed = true
 				continue
 			}
 		default:
-			if len(r.operationQueue) < r.config.maxOperationQueueSize {
+			if len(r.channels.operational.queue.operation) < r.config.maxOperationQueueSize {
 				continue
 			}
 
 			operations = make([]Operation, r.config.maxOperationQueueSize)
 
 			for i := 0; i < r.config.maxOperationQueueSize; i++ {
-				var operationId = <-r.operationQueue
+				var operationId = <-r.channels.operational.queue.operation
 
-				var operation, ok = r.operationBuffer[operationId]
+				var operation, ok = r.buffers.operations[operationId]
 
 				if !ok {
 					continue
@@ -413,7 +443,7 @@ func (r *Roga) consumeOperationQueue() {
 			}
 		}
 
-		r.dispatcher.DispatchOperations(operations, &r.writingChannels)
+		r.dispatcher.DispatchOperations(operations, &r.channels.operational.writing)
 		operations = make([]Operation, 0)
 	}
 }
@@ -430,8 +460,8 @@ func (r *Roga) consumeLogQueue() {
 		if flushed {
 			for {
 				select {
-				case logId := <-r.logQueue:
-					var log, ok = r.logBuffer[logId]
+				case logId := <-r.channels.operational.queue.log:
+					var log, ok = r.buffers.logs[logId]
 
 					if !ok {
 						continue
@@ -439,14 +469,14 @@ func (r *Roga) consumeLogQueue() {
 
 					logs = append(logs, log)
 				default:
-					var stop = len(r.productionChannel) == 0
+					var stop = len(r.channels.operational.production) == 0
 
-					r.writingChannelsFlush.Stdout <- true
-					r.writingChannelsFlush.File <- true
-					r.writingChannelsFlush.External <- true
+					r.channels.stop.writing.stdout <- true
+					r.channels.stop.writing.file <- true
+					r.channels.stop.writing.external <- true
 
 					if stop {
-						close(r.logQueue)
+						close(r.channels.operational.queue.log)
 						return
 					}
 
@@ -456,22 +486,22 @@ func (r *Roga) consumeLogQueue() {
 		}
 
 		select {
-		case <-r.logQueueFlush:
+		case <-r.channels.stop.queue.log:
 			if !flushed {
 				flushed = true
 				continue
 			}
 		default:
-			if len(r.logQueue) < r.config.maxLogQueueSize {
+			if len(r.channels.operational.queue.log) < r.config.maxLogQueueSize {
 				continue
 			}
 
 			logs = make([]Log, r.config.maxLogQueueSize)
 
 			for i := 0; i < r.config.maxLogQueueSize; i++ {
-				var logId = <-r.logQueue
+				var logId = <-r.channels.operational.queue.log
 
-				var log, ok = r.logBuffer[logId]
+				var log, ok = r.buffers.logs[logId]
 
 				if !ok {
 					continue
@@ -481,7 +511,7 @@ func (r *Roga) consumeLogQueue() {
 			}
 		}
 
-		r.dispatcher.DispatchLogs(logs, &r.writingChannels)
+		r.dispatcher.DispatchLogs(logs, &r.channels.operational.writing)
 		logs = make([]Log, 0)
 	}
 }
@@ -499,13 +529,13 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup) {
 		if flushed {
 			for {
 				select {
-				case writable := <-r.writingChannels.Stdout:
+				case writable := <-r.channels.operational.writing.stdout:
 					collectWritable(writable, &operations, &logs)
 				default:
-					var stop = len(r.logQueue) == 0 && len(r.operationQueue) == 0
+					var stop = len(r.channels.operational.queue.log) == 0 && len(r.channels.operational.queue.operation) == 0
 
 					if stop {
-						close(r.writingChannels.Stdout)
+						close(r.channels.operational.writing.stdout)
 						return
 					}
 
@@ -515,18 +545,18 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup) {
 		}
 
 		select {
-		case flushed, _ = <-r.writingChannelsFlush.Stdout:
+		case flushed, _ = <-r.channels.stop.writing.stdout:
 			if !flushed {
 				flushed = true
 				continue
 			}
 		default:
-			if len(r.writingChannels.Stdout) < r.config.maxStdoutWriterChannelItems {
+			if len(r.channels.operational.writing.stdout) < r.config.maxStdoutWriterChannelItems {
 				continue
 			}
 
 			for i := 0; i < r.config.maxStdoutWriterChannelItems; i++ {
-				collectWritable(<-r.writingChannels.Stdout, &operations, &logs)
+				collectWritable(<-r.channels.operational.writing.stdout, &operations, &logs)
 			}
 		}
 
@@ -547,13 +577,13 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup) {
 		if flushed {
 			for {
 				select {
-				case writable := <-r.writingChannels.File:
+				case writable := <-r.channels.operational.writing.file:
 					collectWritable(writable, &operations, &logs)
 				default:
-					var stop = len(r.logQueue) == 0 && len(r.operationQueue) == 0
+					var stop = len(r.channels.operational.queue.log) == 0 && len(r.channels.operational.queue.operation) == 0
 
 					if stop {
-						close(r.writingChannels.File)
+						close(r.channels.operational.writing.file)
 						return
 					}
 
@@ -563,17 +593,17 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup) {
 		}
 
 		select {
-		case flushed, _ = <-r.writingChannelsFlush.File:
+		case flushed, _ = <-r.channels.stop.writing.file:
 			if !flushed {
 				flushed = true
 				continue
 			}
 		default:
-			if len(r.writingChannels.File) < r.config.maxFileWriterChannelItems {
+			if len(r.channels.operational.writing.file) < r.config.maxFileWriterChannelItems {
 				continue
 			}
 			for i := 0; i < r.config.maxFileWriterChannelItems; i++ {
-				collectWritable(<-r.writingChannels.File, &operations, &logs)
+				collectWritable(<-r.channels.operational.writing.file, &operations, &logs)
 			}
 		}
 
@@ -594,13 +624,13 @@ func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup) {
 		if flushed {
 			for {
 				select {
-				case writable := <-r.writingChannels.External:
+				case writable := <-r.channels.operational.writing.external:
 					collectWritable(writable, &operations, &logs)
 				default:
-					var stop = len(r.logQueue) == 0 && len(r.operationQueue) == 0
+					var stop = len(r.channels.operational.queue.log) == 0 && len(r.channels.operational.queue.operation) == 0
 
 					if stop {
-						close(r.writingChannels.External)
+						close(r.channels.operational.writing.external)
 						return
 					}
 
@@ -610,18 +640,18 @@ func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup) {
 		}
 
 		select {
-		case flushed, _ = <-r.writingChannelsFlush.External:
+		case flushed, _ = <-r.channels.stop.writing.external:
 			if !flushed {
 				flushed = true
 				continue
 			}
 		default:
-			if len(r.writingChannels.External) < r.config.maxExternalWriterChannelItems {
+			if len(r.channels.operational.writing.external) < r.config.maxExternalWriterChannelItems {
 				continue
 			}
 
 			for i := 0; i < r.config.maxExternalWriterChannelItems; i++ {
-				collectWritable(<-r.writingChannels.External, &operations, &logs)
+				collectWritable(<-r.channels.operational.writing.external, &operations, &logs)
 			}
 		}
 
