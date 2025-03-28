@@ -289,7 +289,7 @@ type (
 	}
 
 	ActorType      uint
-	Priority       uint
+	Priority       int
 	VerbosityClass uint
 	Level          int
 )
