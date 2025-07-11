@@ -6,4 +6,5 @@ use (
 	utils
 	rabbit-topology
 	roga
+	sse
 )

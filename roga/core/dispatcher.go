@@ -1,4 +1,4 @@
-package core
+package roga
 
 import (
 	"github.com/google/uuid"

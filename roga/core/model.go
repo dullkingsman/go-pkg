@@ -1,4 +1,4 @@
-package core
+package roga
 
 import (
 	"github.com/google/uuid"
@@ -20,6 +20,7 @@ type (
 		lastWrite                  time.Time
 		rootOperation              Operation
 		context                    Context
+		currentSystemMetrics       SystemMetrics
 		producer                   Producer
 		monitor                    Monitor
 		dispatcher                 Dispatcher
@@ -28,12 +29,13 @@ type (
 	}
 
 	Config struct {
-		ServiceName string
-		Instance    *InstanceConfig
-		Producer    Producer
-		Monitor     Monitor
-		Dispatcher  Dispatcher
-		Writer      Writer
+		Name       string
+		Code       string
+		Instance   *InstanceConfig
+		Producer   Producer
+		Monitor    Monitor
+		Dispatcher Dispatcher
+		Writer     Writer
 	}
 
 	InstanceConfig struct {
@@ -59,13 +61,18 @@ type (
 	}
 
 	Producer interface {
-		LogFatal(args LogArgs, operation *Operation, context Context, framesToSkip int, ch *chan Writable) *Log
-		LogError(args LogArgs, operation *Operation, context Context, framesToSkip int, ch *chan Writable) *Log
-		LogInfo(args LogArgs, operation *Operation, context Context, framesToSkip int, ch *chan Writable) *Log
-		LogWarn(args LogArgs, operation *Operation, context Context, framesToSkip int, ch *chan Writable) *Log
-		LogDebug(args LogArgs, operation *Operation, context Context, framesToSkip int, ch *chan Writable) *Log
-		BeginOperation(args OperationArgs, parent *Operation, measurementInitiator *MeasurementHandler, ch *chan Writable) *Operation
-		EndOperation(operation *Operation, measurementFinalizer *MeasurementHandler, ch *chan Writable)
+		LogFatal(args LogArgs, operation *Operation, systemMetrics SystemMetrics, framesToSkip int, ch *chan Writable) *Log
+		LogError(args LogArgs, operation *Operation, systemMetrics SystemMetrics, framesToSkip int, ch *chan Writable) *Log
+		LogInfo(args LogArgs, operation *Operation, systemMetrics SystemMetrics, framesToSkip int, ch *chan Writable) *Log
+		LogWarn(args LogArgs, operation *Operation, systemMetrics SystemMetrics, framesToSkip int, ch *chan Writable) *Log
+		LogDebug(args LogArgs, operation *Operation, systemMetrics SystemMetrics, framesToSkip int, ch *chan Writable) *Log
+
+		AuditAction(args AuditLogArgs, operation *Operation, framesToSkip int, ch *chan Writable) *Log
+
+		CaptureEvent(args EventLogArgs, operation *Operation, framesToSkip int, ch *chan Writable) *Log
+
+		BeginOperation(args OperationArgs, parent *Operation, context *Context, measurementInitiator MeasurementHandler, ch *chan Writable) *Operation
+		EndOperation(operation *Operation, measurementFinalizer MeasurementHandler, ch *chan Writable)
 	}
 
 	Monitor interface {
@@ -93,7 +100,7 @@ type (
 		WriteOperationsToFile(items []Operation, file *os.File, r *Roga)
 		WriteOperationsToExternal(items []Operation, r *Roga)
 		WriteLogsToStdout(items []Log, r *Roga)
-		WriteLogsToFile(items []Log, file *os.File, r *Roga)
+		WriteLogsToFile(items []Log, normal *os.File, audit *os.File, event *os.File, r *Roga)
 		WriteLogsToExternal(items []Log, r *Roga)
 	}
 
@@ -156,16 +163,26 @@ type (
 
 	OperationArgs struct {
 		Name        string  `json:"name"`
-		Description *string `json:"description"`
+		Description *string `json:"description,omitempty"`
 		Actor       Actor   `json:"actor"`
 	}
 
 	LogArgs struct {
-		Priority       *Priority       `json:"priority"`
-		VerbosityClass *VerbosityClass `json:"verbosityClass"`
+		Priority       *Priority       `json:"priority,omitempty"`
+		VerbosityClass *VerbosityClass `json:"verbosityClass,omitempty"`
+		Event          *string         `json:"event,omitempty"`
+		Outcome        *string         `json:"outcome,omitempty"`
 		Message        string          `json:"message"`
 		Actor          Actor           `json:"actor"`
-		Data           *interface{}    `json:"data"`
+		Data           *interface{}    `json:"data,omitempty"`
+	}
+
+	AuditLogArgs struct {
+		LogArgs
+	}
+
+	EventLogArgs struct {
+		LogArgs
 	}
 
 	MonitorConfig struct {
@@ -173,11 +190,14 @@ type (
 	}
 
 	Replay struct {
-		Id           uuid.UUID          `json:"id"`
-		Name         string             `json:"name"`
-		Index        int                `json:"index"` // the index of the replay in the list of replays for the same operation
-		OperationId  *uuid.UUID         `json:"operationId"`
-		Measurements map[string]float64 `json:"measurements"`
+		Id                    uuid.UUID             `json:"id"`
+		Name                  string                `json:"name"`
+		Index                 int                   `json:"index"` // the index of the replay in the list of replays for the same operation
+		OperationId           *uuid.UUID            `json:"operationId,omitempty"`
+		EssentialMeasurements EssentialMeasurements `json:"essentialMeasurements"`
+		Measurements          map[string]float64    `json:"measurements,omitempty"`
+		Actor                 *Actor                `json:"actor"`
+		Context               *Context              `json:"context"`
 	}
 
 	Operation struct {
@@ -185,19 +205,24 @@ type (
 		r                     *Roga
 		Id                    uuid.UUID             `json:"id"`
 		Name                  string                `json:"name"`
-		Description           *string               `json:"description"`
-		BaseOperationId       *uuid.UUID            `json:"baseOperationId"`
-		ParentId              *uuid.UUID            `json:"parentId"`
-		OperationChildren     []uuid.UUID           `json:"operationChildren"`
-		LogChildren           []uuid.UUID           `json:"logChildren"`
+		Description           *string               `json:"description,omitempty"`
+		BaseOperationId       *uuid.UUID            `json:"baseOperationId,omitempty"`
+		ParentId              *uuid.UUID            `json:"parentId,omitempty"`
+		ReplayId              *uuid.UUID            `json:"replayId,omitempty"`
+		OperationChildren     []uuid.UUID           `json:"operationChildren,omitempty"`
+		LogChildren           []uuid.UUID           `json:"logChildren,omitempty"`
 		EssentialMeasurements EssentialMeasurements `json:"essentialMeasurements"`
-		Measurements          map[string]float64    `json:"measurements"`
+		Measurements          map[string]float64    `json:"measurements,omitempty"`
 		Actor                 Actor                 `json:"actor"`
+		Context               *Context              `json:"context,omitempty"`
 	}
 
 	Log struct {
 		Writable
 		Id             uuid.UUID      `json:"id"`
+		Type           Type           `json:"type"`
+		Event          *string        `json:"event,omitempty"`
+		Outcome        *string        `json:"outcome,omitempty"`
 		Level          Level          `json:"level"`
 		Priority       Priority       `json:"priority"`
 		VerbosityClass VerbosityClass `json:"verbosityClass"`
@@ -207,8 +232,8 @@ type (
 		Timestamp      time.Time      `json:"timestamp"`
 		Stack          StackTrace     `json:"stack"`
 		Actor          Actor          `json:"actor"`
-		Context        Context        `json:"context"`
-		Data           *interface{}   `json:"data"`
+		SystemMetrics  SystemMetrics  `json:"systemMetrics"`
+		Data           *interface{}   `json:"data,omitempty"`
 	}
 
 	EssentialMeasurements struct {
@@ -218,32 +243,38 @@ type (
 
 	Actor struct {
 		Type           ActorType       `json:"type"`
+		Client         *Client         `json:"client,omitempty"`
 		User           *User           `json:"user,omitempty"`
 		ExternalSystem *ExternalSystem `json:"externalSystem,omitempty"`
 	}
 
+	Client struct {
+		Id        string  `json:"id"`
+		Ip        *string `json:"ip,omitempty"`
+		UserAgent *string `json:"userAgent,omitempty"`
+	}
+
 	User struct {
 		Identifier      string  `json:"identifier"` // anything specific that can identify the user. E.g. if the user is not yet created the phone number and if they are, the id.
-		Id              *string `json:"id,omitempty"`
-		IdType          *string `json:"idType,omitempty"`
-		SessionId       *string `json:"sessionId,omitempty"`
-		SessionIdType   *string `json:"sessionIdType,omitempty"`
-		Role            *string `json:"role,omitempty"`
-		PermissionLevel *string `json:"permissionLevel,omitempty"`
-		Type            *string `json:"type,omitempty"`
-		PhoneNumber     *string `json:"phoneNumber,omitempty"`
-		Email           *string `json:"email,omitempty"`
+		Id              *string `json:"id,omitempty,omitempty"`
+		IdType          *string `json:"idType,omitempty,omitempty"`
+		SessionId       *string `json:"sessionId,omitempty,omitempty"`
+		SessionIdType   *string `json:"sessionIdType,omitempty,omitempty"`
+		Role            *string `json:"role,omitempty,omitempty"`
+		PermissionLevel *string `json:"permissionLevel,omitempty,omitempty"`
+		Type            *string `json:"type,omitempty,omitempty"`
+		PhoneNumber     *string `json:"phoneNumber,omitempty,omitempty"`
+		Email           *string `json:"email,omitempty,omitempty"`
 	}
 
 	ExternalSystem struct {
 		Id   string `json:"id"`
-		Ip   string `json:"ip"`
 		Name string `json:"name,omitempty"`
 	}
 
 	StackTrace struct {
 		Crashed bool         `json:"crashed"`
-		Frames  []StackFrame `json:"frames"`
+		Frames  []StackFrame `json:"frames,omitempty"`
 	}
 
 	StackFrame struct {
@@ -253,17 +284,13 @@ type (
 	}
 
 	Context struct {
-		Environment          Environment          `json:"environment"`
-		SystemSpecifications SystemSpecifications `json:"systemSpecifications"`
+		Application Application          `json:"application"`
+		System      SystemSpecifications `json:"system"`
 	}
 
-	Environment struct {
-		ApplicationEnvironment ApplicationEnvironment `json:"applicationEnvironment"`
-		SystemEnvironment      SystemEnvironment      `json:"systemEnvironment"`
-	}
-
-	ApplicationEnvironment struct {
-		ServiceName string `json:"serviceName"`
+	Application struct {
+		Name        string `json:"name"`
+		Code        string `json:"code"`
 		Version     string `json:"version"`
 		Env         string `json:"env"`
 		Lang        string `json:"lang"`
@@ -271,25 +298,37 @@ type (
 		ProcessId   int    `json:"processId"`
 	}
 
-	SystemEnvironment struct {
+	SystemSpecifications struct {
+		Product    ProductIdentifier `json:"product"`
+		InstanceId *string           `json:"instanceId,omitempty"`
+		MachineId  *string           `json:"machineId,omitempty"`
+		MacAddress *string           `json:"macAddress,omitempty"`
+		Os         string            `json:"os"`
+		Arch       string            `json:"arch"`
+		CpuCores   int               `json:"cpuCores"`
+		Memory     uint64            `json:"memory"`
+		SwapSize   uint64            `json:"swapSize"`
+		DiskSize   uint64            `json:"diskSize"`
+		PageSize   int               `json:"pageSize"`
+	}
+
+	ProductIdentifier struct {
+		Name   *string `json:"name,omitempty"`
+		Serial *string `json:"serial,omitempty"`
+		Uuid   *string `json:"uuid,omitempty"`
+	}
+
+	SystemMetrics struct {
 		CpuUsage        float64 `json:"cpuUsage"`
 		AvailableMemory uint64  `json:"availableMemory"`
 		AvailableDisk   uint64  `json:"availableDisk"`
 		AvailableSwap   uint64  `json:"availableSwap"`
 	}
 
-	SystemSpecifications struct {
-		Os       string `json:"os"`
-		Arch     string `json:"arch"`
-		CpuCores int    `json:"cpuCores"`
-		Memory   uint64 `json:"memory"`
-		SwapSize uint64 `json:"swapSize"`
-		DiskSize uint64 `json:"diskSize"`
-		PageSize int    `json:"pageSize"`
-	}
-
 	ActorType      uint
 	Priority       int
 	VerbosityClass uint
 	Level          int
+	Type           uint
+	CloudProvider  uint
 )

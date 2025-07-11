@@ -9,9 +9,7 @@ import (
 	"strings"
 )
 
-func GenerateClientModel(driver string, schemaFilePath string) {
-	var client = GetMasterConnection()
-
+func GenerateClientModel(driver string, client *DB, schemaFilePath string) {
 	var (
 		enums map[string]Enum
 		err   error
@@ -68,10 +66,10 @@ func GenerateDefinitionModel(
 		var init = ""
 		var values = ""
 
-		var goName = utils.CapitalizeFirstLetter(name)
+		var goName = utils.AnyToPascalCase(name)
 
 		for _, value := range enum.Values {
-			var valueName = utils.SnakeCaseToPascalCase(strings.ToLower(value))
+			var valueName = utils.AnyToPascalCase(strings.ToLower(value))
 
 			def += "\t" + valueName + " " + goName + "\n"
 			init += "\t" + valueName + ": " + goName + "(\"" + value + "\"),\n"
@@ -86,7 +84,7 @@ func GenerateDefinitionModel(
 		_enums += def
 		_enums += "}\n"
 
-		_enums += "var " + goName + "Value = _" + goName + " {\n"
+		_enums += "var " + goName + "value = _" + goName + " {\n"
 		_enums += init
 		_enums += "}\n"
 
@@ -102,14 +100,14 @@ func GenerateDefinitionModel(
 	_tables += "// ------------------------------------------------------------------------------------------------------------------\n\n"
 
 	for name, table := range tables {
-		var tableName = utils.SnakeCaseToPascalCase(name)
+		var tableName = utils.AnyToPascalCase(name)
 
 		_tables += "// " + tableName + " ------------------------------------------------------------------------------------------------\n\n"
 
 		_tables += "type Inner" + tableName + " struct {\n"
 
 		for _, column := range table.Columns {
-			var col = utils.SnakeCaseToPascalCase(column.Name)
+			var col = utils.AnyToPascalCase(column.Name)
 
 			var _type = PgTypeToGoType(column)
 
@@ -160,31 +158,31 @@ func GenerateQueryModel(schema map[string]Table, schemaFilePath string) {
 	var values = ""
 
 	for name, table := range schema {
-		var tableName = utils.SnakeCaseToPascalCase(name)
+		var tableName = utils.AnyToPascalCase(name)
 
 		var typeColumns = ""
 		var valueColumns = ""
 
 		for _, column := range table.Columns {
-			var col = utils.SnakeCaseToPascalCase(column.Name)
+			var col = utils.AnyToPascalCase(column.Name)
 
 			typeColumns += "\t" + col + " prizzle.SqlName\n"
 
 			valueColumns += "\t" + col + ": prizzle.SqlName(\"" + column.Name + "\"),\n"
 		}
 
-		types += "type _" + name + " struct {\n"
+		types += "type _" + utils.AnyToLowerSnakeCase(name) + " struct {\n"
 		types += "\tprizzle.SqlTable\n"
 		types += typeColumns
 		types += "}\n\n"
 
-		extensions += "// " + name + " extensions\n"
-		extensions += "func (t _" + name + ") GetSqlTable() prizzle.SqlTable { return t.SqlTable }\n"
-		extensions += "func (t _" + name + ") As(alias string) prizzle.EmbedsSqlTable { t.SqlTable = t.SqlTable.As(alias); return t }\n"
-		extensions += "func (t _" + name + ") Aliased(alias string) prizzle.EmbedsSqlTable { t.SqlTable = t.SqlTable.Aliased(alias); return t }\n"
-		extensions += "func (t _" + name + ") Namespaced(alias string) prizzle.EmbedsSqlTable { t.SqlTable = t.SqlTable.Namespaced(alias); return t }\n\n"
+		extensions += "// " + utils.AnyToLowerSnakeCase(name) + " extensions\n"
+		extensions += "func (t _" + utils.AnyToLowerSnakeCase(name) + ") GetSqlTable() prizzle.SqlTable { return t.SqlTable }\n"
+		extensions += "func (t _" + utils.AnyToLowerSnakeCase(name) + ") As(alias string) prizzle.EmbedsSqlTable { t.SqlTable = t.SqlTable.As(alias); return t }\n"
+		extensions += "func (t _" + utils.AnyToLowerSnakeCase(name) + ") Aliased(alias string) prizzle.EmbedsSqlTable { t.SqlTable = t.SqlTable.Aliased(alias); return t }\n"
+		extensions += "func (t _" + utils.AnyToLowerSnakeCase(name) + ") Namespaced(alias string) prizzle.EmbedsSqlTable { t.SqlTable = t.SqlTable.Namespaced(alias); return t }\n\n"
 
-		values += "var " + tableName + " = _" + name + "{\n\tSqlTable: prizzle.SqlTable{\n\t\tName: \"" + name + "\",\n\t},\n" + valueColumns + "}\n"
+		values += "var " + tableName + " = _" + utils.AnyToLowerSnakeCase(name) + "{\n\tSqlTable: prizzle.SqlTable{\n\t\tName: \"" + name + "\",\n\t},\n" + valueColumns + "}\n"
 	}
 
 	buffer += types
@@ -220,53 +218,79 @@ func GenerateQueryModel(schema map[string]Table, schemaFilePath string) {
 	utils.LogSuccess("prizzle-query-model-generator", "generated query model")
 }
 
-func GetTablesInfo(driver string, dbClient DatabaseClient) (map[string]Table, error) {
+func GetTablesInfo(driver string, dbClient DatabaseClient, schemas ...string) (map[string]Table, error) {
 	utils.LogInfo("prizzle-table-info-extractor", "getting tables info...")
+
+	var tmp = "public"
+
+	if len(schemas) > 0 {
+		tmp = strings.Join(schemas, ", ")
+	}
 
 	var query = `WITH column_info AS (
     SELECT
-        c.table_name,
-        c.column_name AS name,
-        CASE
+    CASE
+        WHEN c.table_schema = 'public' THEN c.table_name
+        ELSE CONCAT(c.table_schema, '.', c.table_name)
+        END AS table_name,
+	c.table_schema as table_schema,
+    c.column_name AS name,
+    CASE
         WHEN data_type = 'USER-DEFINED' THEN
             udt_name
-        ELSDatabaseE
+        ELSE
             data_type
         END AS type,
-        c.is_nullable = 'YES' AS nullable,
-        CASE
+    c.is_nullable = 'YES' AS nullable,
+    CASE
         WHEN c.data_type = 'USER-DEFINED' AND t.typcategory = 'E' THEN
             TRUE
         ELSE
             FALSE
-        END AS is_enum
+        END AS is_enum,
+	CASE
+        WHEN c.data_type = 'USER-DEFINED' THEN
+            n.nspname
+        ELSE
+            'public'
+        END AS column_schema
     FROM
         information_schema.columns c
     LEFT JOIN
         pg_catalog.pg_type t
     ON
         c.udt_name = t.typname
-    WHERE
-        c.table_schema = 'public' AND
-        c.table_name <> 'pg_stat_statements' AND
-        c.table_name <> '_prisma_migrations' AND
-        c.table_name <> 'pg_stat_statements_info' AND
-        c.table_name <> 'geometry_columns' AND
-        c.table_name <> 'geography_columns' AND
-        c.table_name <> 'spatial_ref_sys'
+	LEFT JOIN
+		pg_catalog.pg_namespace n
+    ON
+        t.typnamespace = n.oid
+	WHERE
+    	(
+        	c.table_schema = 'public' AND
+        	c.table_name <> 'pg_stat_statements' AND
+        	c.table_name <> '_prisma_migrations' AND
+        	c.table_name <> 'pg_stat_statements_info' AND
+        	c.table_name <> 'geometry_columns' AND
+        	c.table_name <> 'geography_columns' AND
+        	c.table_name <> 'spatial_ref_sys'
+    	) OR
+    	c.table_schema IN (` + tmp + `)
 )
-SELECT
+SELECT DISTINCT ON (table_name, table_schema)
     table_name as name,
+    table_schema as schema,
     json_agg(json_build_object(
         'name', name,
         'type', type,
+		'schema', column_schema,
         'nullable', nullable,
         'is_enum', is_enum
     )) AS columns
 FROM
     column_info
 GROUP BY
-    table_name
+    table_name,
+    table_schema
 ORDER BY
     table_name;`
 
@@ -385,26 +409,35 @@ ORDER BY
 	return schema, nil
 }
 
-func GetEnumsInfo(dbClient DatabaseClient) (map[string]Enum, error) {
+func GetEnumsInfo(dbClient DatabaseClient, schemas ...string) (map[string]Enum, error) {
 	utils.LogInfo("prizzle-enum-info-extractor", "getting enums info...")
 
+	var tmp = "public"
+
+	if len(schemas) > 0 {
+		tmp = strings.Join(schemas, ", ")
+	}
+
 	var query = `SELECT
-    t.typname AS name,
+    CASE
+        WHEN n.nspname = 'public' THEN t.typname
+        ELSE CONCAT(n.nspname, '_', t.typname)
+        END AS name,
     json_agg(e.enumlabel) AS values
 FROM
     pg_type t
-JOIN
+        JOIN
     pg_enum e
-ON
-    t.oid = e.enumtypid
-JOIN
+    ON
+        t.oid = e.enumtypid
+        JOIN
     pg_catalog.pg_namespace n
-ON
-    n.oid = t.typnamespace
+    ON
+        n.oid = t.typnamespace
 WHERE
-    n.nspname = 'public' -- or your schema name
+    n.nspname IN (` + tmp + `)
 GROUP BY
-    t.typname;`
+    n.nspname, t.typname`
 
 	rows, err := dbClient.Query(query)
 
@@ -445,7 +478,7 @@ GROUP BY
 }
 
 func SqliteTypeToGoType(column Column) string {
-	switch column.Type {
+	switch strings.ToUpper(column.Type) {
 	case "TINYINT":
 		if column.Nullable {
 			return "*int8"
@@ -511,8 +544,8 @@ func SqliteTypeToGoType(column Column) string {
 	}
 }
 
-func PgTypeToGoType(column Column) string {
-	switch column.Type {
+func PgTypeToGoType(column Column, schema ...string) string {
+	switch strings.ToLower(column.Type) {
 	case "bigint":
 		if column.Nullable {
 			return "*int64"
@@ -551,7 +584,13 @@ func PgTypeToGoType(column Column) string {
 	}
 
 	if column.IsEnum {
-		var _type = utils.CapitalizeFirstLetter(column.Type)
+		var _type = column.Type
+
+		if len(schema) > 0 {
+			if schema[0] != "public" {
+				_type = utils.CapitalizeFirstLetter(schema[0]) + utils.CapitalizeFirstLetter(_type)
+			}
+		}
 
 		if column.Nullable {
 			return "*" + _type
@@ -574,12 +613,14 @@ type Enum struct {
 
 type Table struct {
 	Name    string   `json:"name"`
+	Schema  string   `json:"schema"`
 	Columns []Column `json:"columns"`
 }
 
 type Column struct {
 	Name     string `json:"name"`
 	Type     string `json:"type"`
+	Schema   string `json:"schema"`
 	Nullable bool   `json:"nullable"`
 	IsEnum   bool   `json:"is_enum"`
 }

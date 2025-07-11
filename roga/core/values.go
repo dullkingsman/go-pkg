@@ -1,4 +1,4 @@
-package core
+package roga
 
 import (
 	"os"
@@ -7,6 +7,10 @@ import (
 )
 
 const (
+	TypeNormal Type = 0
+	TypeAudit  Type = 1
+	TypeEvent  Type = 2
+
 	LevelDebug Level = -4
 	LevelInfo  Level = 0
 	LevelWarn  Level = 4
@@ -51,6 +55,14 @@ const (
 
 	DefaultOperationsFileName = "operations.jsonl"
 	DefaultLogsFileName       = "logs.jsonl"
+
+	CloudProviderUnknown    CloudProvider = 0
+	CloudProviderAWS        CloudProvider = 1
+	CloudProviderGCP        CloudProvider = 2
+	CloudProviderAzure      CloudProvider = 3
+	CloudProviderVmware     CloudProvider = 5
+	CloudProviderVirtualBox CloudProvider = 6
+	CloudProviderKvmQemu    CloudProvider = 7
 )
 
 var (
@@ -59,14 +71,12 @@ var (
 	DefaultMaxExternalWriters = 4 * runtime.NumCPU()
 
 	defaultOperationContext = Context{
-		Environment: Environment{
-			ApplicationEnvironment: ApplicationEnvironment{
-				Lang:        "go",
-				LangVersion: runtime.Version(),
-				ProcessId:   os.Getpid(),
-			},
+		Application: Application{
+			Lang:        "go",
+			LangVersion: runtime.Version(),
+			ProcessId:   os.Getpid(),
 		},
-		SystemSpecifications: SystemSpecifications{
+		System: SystemSpecifications{
 			Os:       runtime.GOOS,
 			Arch:     runtime.GOARCH,
 			CpuCores: runtime.NumCPU(),

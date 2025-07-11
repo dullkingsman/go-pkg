@@ -9,6 +9,63 @@ import (
 	"strconv"
 )
 
+// Deprecated: DO NOT USE THIS FUNCTION!
+func (c *Conn) Prepare(query string) (*sql.Stmt, error) { //TODO find a way to remove this
+	panic("This function is decorative. It is here because I could not get around the type system of go. IT SHOULD NOT BE USED!")
+}
+
+// Deprecated: DO NOT USE THIS FUNCTION!
+func (c *Conn) Exec(query string, args ...any) (sql.Result, error) { //TODO find a way to remove this
+	panic("This function is decorative. It is here because I could not get around the type system of go. IT SHOULD NOT BE USED!")
+}
+
+// Deprecated: DO NOT USE THIS FUNCTION!
+func (c *Conn) Query(query string, args ...any) (*sql.Rows, error) { //TODO find a way to remove this
+	panic("This function is decorative. It is here because I could not get around the type system of go. IT SHOULD NOT BE USED!")
+}
+
+// Deprecated: DO NOT USE THIS FUNCTION!
+func (c *Conn) QueryRow(query string, args ...any) *sql.Row { //TODO find a way to remove this
+	panic("This function is decorative. It is here because I could not get around the type system of go. IT SHOULD NOT BE USED!")
+}
+
+func (s *Stmt) Exec() (sql.Result, error) {
+	return s.Stmt.Exec(s.Args...)
+}
+
+func (s *Stmt) ExecContext(ctx context.Context) (sql.Result, error) {
+	return s.Stmt.ExecContext(ctx, s.Args...)
+}
+
+func (s *Stmt) Query() (*sql.Rows, error) {
+	return s.Stmt.Query(s.Args...)
+}
+
+func (s *Stmt) QueryContext(ctx context.Context) (*sql.Rows, error) {
+	return s.Stmt.QueryContext(ctx, s.Args...)
+}
+
+func (s *Stmt) QueryRow() *sql.Row {
+	return s.Stmt.QueryRow(s.Args...)
+}
+
+func (s *Stmt) QueryRowContext(ctx context.Context) *sql.Row {
+	return s.Stmt.QueryRowContext(ctx, s.Args...)
+}
+
+func (s *Stmt) SetArgs(args ...any) *Stmt {
+	s.Args = args
+	return s
+}
+
+func (c *Conn) NewQuery() *SqlQuery {
+	var query = Query()
+
+	query.Client = c
+
+	return query
+}
+
 func (client *DB) NewQuery() *SqlQuery {
 	var query = Query()
 
@@ -71,6 +128,26 @@ func (q *PreparedSqlQuery) QueryRow() *sql.Row {
 
 func (q *PreparedSqlQuery) QueryRowContext(ctx context.Context) *sql.Row {
 	return q.Client.QueryRowContext(ctx, q.QueryString, q.Args...)
+}
+
+func (q *PreparedSqlQuery) Prepare() (*Stmt, error) {
+	var stmt, err = q.Client.Prepare(q.QueryString)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &Stmt{Stmt: stmt, Args: q.Args}, nil
+}
+
+func (q *PreparedSqlQuery) PrepareContext(ctx context.Context) (*Stmt, error) {
+	var stmt, err = q.Client.PrepareContext(ctx, q.QueryString)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &Stmt{Stmt: stmt, Args: q.Args}, nil
 }
 
 // WITH ----------------------------------------------------------------------------------------------------------------
@@ -686,7 +763,7 @@ func (q *SqlQuery) Gte(left SqlName, right interface{}) SqlCondition {
 	return SqlCondition(left.String() + " >= " + fmt.Sprintf("$%d", len(*q.Args)))
 }
 
-func (q *SqlQuery) Gtec(left SqlName, right SqlName) SqlCondition {
+func (q *SqlQuery) GteC(left SqlName, right SqlName) SqlCondition {
 	return SqlCondition(left.String() + " >= " + right.String())
 }
 
@@ -704,7 +781,7 @@ func (q *SqlQuery) Lte(left SqlName, right interface{}) SqlCondition {
 	return SqlCondition(left.String() + " <= " + fmt.Sprintf("$%d", len(*q.Args)))
 }
 
-func (q *SqlQuery) Ltec(left SqlName, right SqlName) SqlCondition {
+func (q *SqlQuery) LteC(left SqlName, right SqlName) SqlCondition {
 	return SqlCondition(left.String() + " <= " + right.String())
 }
 

@@ -1,13 +1,18 @@
-package core
+package roga
 
 import (
 	"github.com/dullkingsman/go-pkg/utils"
 	"github.com/google/uuid"
+	"os"
 	"sync"
 	"time"
 )
 
 func Init(config ...Config) Roga {
+	if os.Geteuid() != 0 {
+		utils.LogFatal("roga", "needs to run as root")
+	}
+
 	var _config = defaultRogaConfig
 
 	if len(config) > 0 {
@@ -38,6 +43,7 @@ func Init(config ...Config) Roga {
 		context:         defaultOperationContext,
 		config:          *_config.Instance,
 		metricsLock:     &sync.RWMutex{},
+		lastWriteLock:   &sync.RWMutex{},
 		consumptionSync: &sync.WaitGroup{},
 		started:         false,
 		producer:        _config.Producer,
@@ -54,9 +60,14 @@ func Init(config ...Config) Roga {
 			Actor: Actor{Type: 1},
 		},
 		metricMonitorControls: monitorControls{
-			stop:   make(chan bool),
-			pause:  make(chan bool),
-			resume: make(chan bool),
+			stop:   make(chan bool, 1),
+			pause:  make(chan bool, 1),
+			resume: make(chan bool, 1),
+		},
+		idleChannelMonitorControls: monitorControls{
+			stop:   make(chan bool, 1),
+			pause:  make(chan bool, 1),
+			resume: make(chan bool, 1),
 		},
 		buffers: buffers{
 			operations: make(map[uuid.UUID]Operation),
@@ -102,7 +113,21 @@ func Init(config ...Config) Roga {
 		},
 	}
 
-	instance.context.Environment.ApplicationEnvironment.ServiceName = _config.ServiceName
+	instance.context.Application.Name = _config.Name
+	instance.context.Application.Code = _config.Code
+
+	var (
+		product    = getProductIdentifier()
+		provider   = getCloudProvider(product)
+		instanceId = getCloudInstanceID(provider)
+		machineId  = getMachineID()
+		macAddress = getMacAddress()
+	)
+
+	instance.context.System.Product = product
+	instance.context.System.InstanceId = instanceId
+	instance.context.System.MachineId = machineId
+	instance.context.System.MacAddress = macAddress
 
 	instance.rootOperation.r = &instance
 
@@ -112,27 +137,40 @@ func Init(config ...Config) Roga {
 func (r *Roga) StopSystemMonitoring() {
 	r.ResumeSystemMonitoring()
 	r.metricMonitorControls.stop <- true
+
+	utils.LogInfo("roga:cleanup", "stopped system monitoring")
 }
 
 func (r *Roga) PauseSystemMonitoring() {
 	r.metricMonitorControls.pause <- true
+
+	utils.LogInfo("roga:cleanup", "paused system monitoring")
 }
 
 func (r *Roga) ResumeSystemMonitoring() {
 	r.metricMonitorControls.resume <- true
+
+	utils.LogInfo("roga:cleanup", "resumed system monitoring")
 }
 
 func (r *Roga) StopIdleChannelMonitoring() {
 	r.ResumeIdleChannelMonitoring()
-	r.metricMonitorControls.stop <- true
+
+	r.idleChannelMonitorControls.stop <- true
+
+	utils.LogInfo("roga:cleanup", "stopped idle channel monitoring")
 }
 
 func (r *Roga) PauseIdleChannelMonitoring() {
-	r.metricMonitorControls.pause <- true
+	r.idleChannelMonitorControls.pause <- true
+
+	utils.LogInfo("roga:cleanup", "paused idle channel monitoring")
 }
 
 func (r *Roga) ResumeIdleChannelMonitoring() {
-	r.metricMonitorControls.resume <- true
+	r.idleChannelMonitorControls.resume <- true
+
+	utils.LogInfo("roga:cleanup", "resumed idle channel monitoring")
 }
 
 func (r *Roga) Start() {
@@ -143,6 +181,8 @@ func (r *Roga) Start() {
 
 		r.startConsuming()
 	}
+
+	utils.LogInfo("roga:startup", "started")
 }
 
 func (r *Roga) Flush() {
@@ -150,10 +190,16 @@ func (r *Roga) Flush() {
 	r.channels.flush.writing.file <- true
 	r.channels.flush.writing.external <- true
 
+	utils.LogInfo("roga:cleanup:consumption", "flushed writes")
+
 	r.channels.flush.queue.operation <- true
 	r.channels.flush.queue.log <- true
 
+	utils.LogInfo("roga:cleanup:consumption", "flushed queues")
+
 	r.channels.flush.production <- true
+
+	utils.LogInfo("roga:cleanup:consumption", "flushed production")
 }
 
 func (r *Roga) StopConsuming() {
@@ -161,10 +207,16 @@ func (r *Roga) StopConsuming() {
 	r.channels.stop.writing.file <- true
 	r.channels.stop.writing.external <- true
 
+	utils.LogInfo("roga:cleanup:consumption", "stopped consuming writes")
+
 	r.channels.stop.queue.operation <- true
 	r.channels.stop.queue.log <- true
 
+	utils.LogInfo("roga:cleanup:consumption", "stopped consuming queues")
+
 	r.channels.stop.production <- true
+
+	utils.LogInfo("roga:cleanup:consumption", "stopped consuming production")
 }
 
 func (r *Roga) Stop() {
@@ -173,6 +225,8 @@ func (r *Roga) Stop() {
 	r.StopSystemMonitoring()
 
 	r.StopConsuming()
+
+	utils.LogInfo("roga:cleanup", "stopped")
 }
 
 func (r *Roga) Recover() {
@@ -191,7 +245,7 @@ func (r *Roga) LogFatal(args LogArgs) {
 	r.producer.LogFatal(
 		args,
 		&r.rootOperation,
-		r.context,
+		r.currentSystemMetrics,
 		1,
 		&r.channels.operational.production,
 	)
@@ -201,7 +255,7 @@ func (r *Roga) LogError(args LogArgs) {
 	r.producer.LogError(
 		args,
 		&r.rootOperation,
-		r.context,
+		r.currentSystemMetrics,
 		1,
 		&r.channels.operational.production,
 	)
@@ -211,7 +265,7 @@ func (r *Roga) LogWarn(args LogArgs) {
 	r.producer.LogWarn(
 		args,
 		&r.rootOperation,
-		r.context,
+		r.currentSystemMetrics,
 		1,
 		&r.channels.operational.production,
 	)
@@ -221,7 +275,7 @@ func (r *Roga) LogInfo(args LogArgs) {
 	r.producer.LogInfo(
 		args,
 		&r.rootOperation,
-		r.context,
+		r.currentSystemMetrics,
 		1,
 		&r.channels.operational.production,
 	)
@@ -231,7 +285,25 @@ func (r *Roga) LogDebug(args LogArgs) {
 	r.producer.LogDebug(
 		args,
 		&r.rootOperation,
-		r.context,
+		r.currentSystemMetrics,
+		1,
+		&r.channels.operational.production,
+	)
+}
+
+func (r *Roga) AuditAction(args AuditLogArgs) {
+	r.producer.AuditAction(
+		args,
+		&r.rootOperation,
+		1,
+		&r.channels.operational.production,
+	)
+}
+
+func (r *Roga) CaptureEvent(args EventLogArgs) {
+	r.producer.CaptureEvent(
+		args,
+		&r.rootOperation,
 		1,
 		&r.channels.operational.production,
 	)
@@ -247,7 +319,8 @@ func (r *Roga) BeginOperation(args OperationArgs, measurementInitiator ...Measur
 	var operation = r.producer.BeginOperation(
 		args,
 		&r.rootOperation,
-		&_measurementInitiator,
+		&r.context,
+		_measurementInitiator,
 		&r.channels.operational.production,
 	)
 
@@ -260,7 +333,7 @@ func (o *Operation) LogFatal(args LogArgs) {
 	var log = o.r.producer.LogFatal(
 		args,
 		o,
-		o.r.context,
+		o.r.currentSystemMetrics,
 		1,
 		&o.r.channels.operational.production,
 	)
@@ -272,7 +345,7 @@ func (o *Operation) LogError(args LogArgs) {
 	var log = o.r.producer.LogError(
 		args,
 		o,
-		o.r.context,
+		o.r.currentSystemMetrics,
 		1,
 		&o.r.channels.operational.production,
 	)
@@ -284,7 +357,7 @@ func (o *Operation) LogWarn(args LogArgs) {
 	var log = o.r.producer.LogWarn(
 		args,
 		o,
-		o.r.context,
+		o.r.currentSystemMetrics,
 		1,
 		&o.r.channels.operational.production,
 	)
@@ -296,7 +369,7 @@ func (o *Operation) LogInfo(args LogArgs) {
 	var log = o.r.producer.LogInfo(
 		args,
 		o,
-		o.r.context,
+		o.r.currentSystemMetrics,
 		1,
 		&o.r.channels.operational.production,
 	)
@@ -308,7 +381,29 @@ func (o *Operation) LogDebug(args LogArgs) {
 	var log = o.r.producer.LogDebug(
 		args,
 		o,
-		o.r.context,
+		o.r.currentSystemMetrics,
+		1,
+		&o.r.channels.operational.production,
+	)
+
+	o.LogChildren = append(o.LogChildren, log.Id)
+}
+
+func (o *Operation) AuditAction(args AuditLogArgs) {
+	var log = o.r.producer.AuditAction(
+		args,
+		o,
+		1,
+		&o.r.channels.operational.production,
+	)
+
+	o.LogChildren = append(o.LogChildren, log.Id)
+}
+
+func (o *Operation) CaptureEvent(args EventLogArgs) {
+	var log = o.r.producer.CaptureEvent(
+		args,
+		o,
 		1,
 		&o.r.channels.operational.production,
 	)
@@ -326,7 +421,8 @@ func (o *Operation) BeginOperation(args OperationArgs, measurementInitiator ...M
 	var operation = o.r.producer.BeginOperation(
 		args,
 		o,
-		&_measurementInitiator,
+		&o.r.context,
+		_measurementInitiator,
 		&o.r.channels.operational.production,
 	)
 
@@ -346,7 +442,7 @@ func (o *Operation) EndOperation(measurementFinalizer ...MeasurementHandler) {
 
 	o.r.producer.EndOperation(
 		o,
-		&_measurementFinalizer,
+		_measurementFinalizer,
 		&o.r.channels.operational.production,
 	)
 }
@@ -370,8 +466,8 @@ func (r *Roga) startConsuming() {
 
 		var wg sync.WaitGroup
 
-		for i := 0; i < r.config.maxStdoutWriters; i++ {
-			go r.consumeStdoutWrites(&wg)
+		for i := 0; i < 1; /*r.config.maxStdoutWriters \/*TODO*\/*/ i++ {
+			go r.consumeStdoutWrites(&wg, i)
 		}
 
 		wg.Wait()
@@ -383,8 +479,8 @@ func (r *Roga) startConsuming() {
 
 		var wg sync.WaitGroup
 
-		for i := 0; i < r.config.maxFileWriters; i++ {
-			go r.consumeFileWrites(&wg)
+		for i := 0; i < 1; /*r.config.maxFileWriters \/*TODO*\/*/ i++ {
+			go r.consumeFileWrites(&wg, i)
 		}
 
 		wg.Wait()
@@ -396,8 +492,8 @@ func (r *Roga) startConsuming() {
 
 		var wg sync.WaitGroup
 
-		for i := 0; i < r.config.maxExternalWriters; i++ {
-			go r.consumeExternalWrites(&wg)
+		for i := 0; i < 1; /*r.config.maxExternalWriters \/*TODO*\/*/ i++ {
+			go r.consumeExternalWrites(&wg, i)
 		}
 
 		wg.Wait()
@@ -407,6 +503,8 @@ func (r *Roga) startConsuming() {
 func (r *Roga) consumeProductionChannel() {
 	r.consumptionSync.Add(1)
 	defer r.consumptionSync.Done()
+
+	utils.LogInfo("roga:startup", "consuming production...")
 
 	var stopped = false
 
@@ -422,6 +520,8 @@ func (r *Roga) consumeProductionChannel() {
 					r.channels.stop.queue.operation <- true
 					r.channels.stop.queue.log <- true
 
+					utils.LogInfo("roga:cleanup", "stopped production consumption")
+
 					return
 				}
 			}
@@ -431,6 +531,9 @@ func (r *Roga) consumeProductionChannel() {
 		case <-r.channels.stop.production:
 			if !stopped {
 				stopped = true
+
+				utils.LogInfo("roga:ops", "signaled production consumption to stop ")
+
 				continue
 			}
 		case <-r.channels.flush.production:
@@ -461,6 +564,8 @@ func (r *Roga) consumeOperationQueue() {
 	r.consumptionSync.Add(1)
 	defer r.consumptionSync.Done()
 
+	utils.LogInfo("roga:startup", "consuming operations...")
+
 	var stopped = false
 
 	for {
@@ -486,8 +591,13 @@ func (r *Roga) consumeOperationQueue() {
 
 					if stop {
 						close(r.channels.operational.queue.operation)
+
+						utils.LogInfo("roga:cleanup", "stopped operation consumption")
+
 						return
 					}
+
+					utils.LogInfo("roga:cleanup", "skipped stopping operation consumption")
 
 					break
 				}
@@ -498,6 +608,9 @@ func (r *Roga) consumeOperationQueue() {
 		case <-r.channels.stop.queue.operation:
 			if !stopped {
 				stopped = true
+
+				utils.LogInfo("roga:ops", "signaled operation consumption to stop")
+
 				continue
 			}
 		case <-r.channels.flush.queue.operation:
@@ -548,6 +661,8 @@ func (r *Roga) consumeLogQueue() {
 	r.consumptionSync.Add(1)
 	defer r.consumptionSync.Done()
 
+	utils.LogInfo("roga:startup", "consuming logs...")
+
 	var stopped = false
 
 	for {
@@ -573,8 +688,13 @@ func (r *Roga) consumeLogQueue() {
 
 					if stop {
 						close(r.channels.operational.queue.log)
+
+						utils.LogInfo("roga:cleanup", "stopped log consumption")
+
 						return
 					}
+
+					utils.LogInfo("roga:cleanup", "skipped stopping log consumption")
 
 					break
 				}
@@ -585,6 +705,9 @@ func (r *Roga) consumeLogQueue() {
 		case <-r.channels.stop.queue.log:
 			if !stopped {
 				stopped = true
+
+				utils.LogInfo("roga:ops", "signaled log consumption to stop ")
+
 				continue
 			}
 		case <-r.channels.flush.queue.log:
@@ -631,8 +754,11 @@ func (r *Roga) consumeLogQueue() {
 	}
 }
 
-func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup) {
+func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup, index int) {
+	wg.Add(1)
 	defer wg.Done()
+
+	utils.LogInfo("roga:startup", "consuming stdout (%d)...", index)
 
 	var stopped = false
 
@@ -651,8 +777,13 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup) {
 
 					if stop {
 						close(r.channels.operational.writing.stdout)
+
+						utils.LogInfo("roga:cleanup", "stopped stdout")
+
 						return
 					}
+
+					utils.LogInfo("roga:cleanup", "skipped stopping stdout")
 
 					break
 				}
@@ -663,6 +794,9 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup) {
 		case <-r.channels.stop.writing.stdout:
 			if !stopped {
 				stopped = true
+
+				utils.LogInfo("roga:ops", "signaled stdout writes to stop ")
+
 				continue
 			}
 		case <-r.channels.flush.writing.stdout:
@@ -688,8 +822,11 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup) {
 	}
 }
 
-func (r *Roga) consumeFileWrites(wg *sync.WaitGroup) {
+func (r *Roga) consumeFileWrites(wg *sync.WaitGroup, index int) {
+	wg.Add(1)
 	defer wg.Done()
+
+	utils.LogInfo("roga:startup", "consuming file (%d)...", index)
 
 	var stopped = false
 
@@ -708,8 +845,13 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup) {
 
 					if stop {
 						close(r.channels.operational.writing.file)
+
+						utils.LogInfo("roga:cleanup", "stopped external")
+
 						return
 					}
+
+					utils.LogInfo("roga:cleanup", "skipped stopping external")
 
 					break
 				}
@@ -720,6 +862,9 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup) {
 		case <-r.channels.stop.writing.file:
 			if !stopped {
 				stopped = true
+
+				utils.LogInfo("roga:ops", "signaled file writes to stop ")
+
 				continue
 			}
 		case <-r.channels.flush.writing.file:
@@ -735,6 +880,7 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup) {
 			if len(r.channels.operational.writing.file) < r.config.maxFileWriterChannelItems {
 				continue
 			}
+
 			for i := 0; i < r.config.maxFileWriterChannelItems; i++ {
 				collectWritable(<-r.channels.operational.writing.file, &operations, &logs)
 			}
@@ -744,8 +890,11 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup) {
 	}
 }
 
-func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup) {
+func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup, index int) {
+	wg.Add(1)
 	defer wg.Done()
+
+	utils.LogInfo("roga:startup", "consuming external (%d)...", index)
 
 	var stopped = false
 
@@ -764,8 +913,13 @@ func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup) {
 
 					if stop {
 						close(r.channels.operational.writing.external)
+
+						utils.LogInfo("roga:cleanup", "stopped external")
+
 						return
 					}
+
+					utils.LogInfo("roga:cleanup", "skipped stopping external")
 
 					break
 				}
@@ -776,6 +930,9 @@ func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup) {
 		case <-r.channels.stop.writing.external:
 			if !stopped {
 				stopped = true
+
+				utils.LogInfo("roga:ops", "signaled external writes to stop")
+
 				continue
 			}
 		case <-r.channels.flush.writing.external:

@@ -108,12 +108,41 @@ type EmbedsSqlTable interface {
 	As(alias string) EmbedsSqlTable
 }
 
+type Cluster struct {
+	WriteNodes    map[string]*DB `json:"writeNodes"`
+	ReadNodes     map[string]*DB `json:"readNodes"`
+	writeNodeKeys []string
+	readNodeKeys  []string
+}
+
+type ClusterConfig struct {
+	WriteNodesConfig map[string]ClusterNodeConfig `json:"writeNodesConfig"`
+	ReadNodesConfig  map[string]ClusterNodeConfig `json:"readNodesConfig"`
+}
+
+type ClusterNodeConfig struct {
+	Url                string         `json:"url"`
+	MaxOpenConnections *int           `json:"maxOpenConnections"`
+	MaxIdleConnections *int           `json:"maxIdleConnections"`
+	MaxIdleTime        *time.Duration `json:"maxIdleTime"`
+	MaxLifetime        *time.Duration `json:"maxLifetime"`
+}
+
 type DB struct {
 	*sql.DB
 }
 
 type Tx struct {
 	*sql.Tx
+}
+
+type Stmt struct {
+	*sql.Stmt
+	Args []interface{}
+}
+
+type Conn struct {
+	*sql.Conn
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

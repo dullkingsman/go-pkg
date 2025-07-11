@@ -70,13 +70,15 @@ func main() {
 		printGeneralHelp(1)
 	}
 
-	prizzle.LoadDatabaseConnections(driver)
+	var client = prizzle.LoadDatabaseClusterNode(driver, prizzle.ClusterNodeConfig{
+		Url: os.Getenv("DATABASE_URL"),
+	})
 
-	defer prizzle.CloseDbConnections()
+	defer prizzle.CloseDatabaseClusterNode(client)
 
 	switch currentCommand {
 	case "generate":
-		prizzle.GenerateClientModel(driver, schemaFilePath)
+		prizzle.GenerateClientModel(driver, client, schemaFilePath)
 	}
 }
 

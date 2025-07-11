@@ -1,0 +1,232 @@
+generator client {
+  provider = "go run github.com/steebchen/prisma-client-go"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// --- Embedded Document Models ---
+
+// Represents the actor performing an action or generating a log/operation
+type Actor {
+  type           Int // Changed from enum ActorType to Int (Go: uint)
+  client         Client?
+  user           User?
+  externalSystem ExternalSystem?
+}
+
+// Details for a client actor
+type Client {
+  id        String
+  ip        String?
+  userAgent String?
+}
+
+// Details for a user actor
+type User {
+  identifier      String? // anything specific that can identify the user. E.g. if the user is not yet created the phone number and if they are, the id.
+  id              String?
+  idType          String?
+  sessionId       String?
+  sessionIdType   String?
+  role            String?
+  permissionLevel String?
+  type            String?
+  phoneNumber     String?
+  email           String?
+}
+
+// Details for an external system actor
+type ExternalSystem {
+  id   String
+  name String?
+}
+
+// Represents a stack trace for error logs
+type StackTrace {
+  crashed Boolean
+  frames  StackFrame[]
+}
+
+// A single frame in a stack trace
+type StackFrame {
+  file       String
+  function   String
+  lineNumber Int
+}
+
+type Environment {
+}
+
+// Represents the overall context for logs and operations
+type Context {
+  systemSpecificationsRefId   String // Reference to SystemSpecification._id
+  applicationEnvironmentRefId String // Reference to Application.Code
+}
+
+// Dynamic system environment details (snapshot at time of log/operation)
+type SystemMetrics {
+  cpuUsage        Float
+  availableMemory BigInt
+  availableDisk   BigInt
+  availableSwap   BigInt
+}
+
+// Essential timing measurements for an operation
+type EssentialMeasurements {
+  startTime DateTime
+  endTime   DateTime
+}
+
+type ProductIdentifier {
+  name   String?
+  serial String?
+  uuid   String?
+}
+
+// --- Collection Models ---
+
+// Represents a logical unit of work or transaction
+model Operation {
+  nativeId              String                @id @map("_id") @db.ObjectId
+  id                    String                @id @db.Uuid
+  name                  String
+  description           String?
+  baseOperationId       String? // Reference to another Operation.id
+  parentId              String? // Reference to parent Operation.id
+  replayId              String? // Reference to Replay.id
+  logChildren           String[]
+  operationChildren     String[]
+  essentialMeasurements EssentialMeasurements
+  measurements          Json?
+  actor                 Actor
+  context               Context?
+
+  @@map("operations") // Maps model to 'operations' collection in MongoDB
+  @@index([essentialMeasurements.startTime])
+  @@index([parentId])
+  @@index([actor.user.identifier]) // Index for user-based actor searches
+  @@index([name])
+  @@index([context.applicationEnvironmentRefId, context.systemSpecificationsRefId]) // Combined index for environment references
+}
+
+// Represents a normal application log entry
+model NormalLog {
+  nativeId       String      @id @map("_id") @db.ObjectId
+  id             String      @unique @db.Uuid
+  timestamp      DateTime
+  event          String?
+  outcome        String?
+  level          Int         @default(0)
+  priority       Int         @default(0)
+  verbosityClass Int         @default(0)
+  message        String
+  tracingId      String
+  operationId    String // Reference to Operation.id
+  stack          StackTrace?
+  actor          Actor
+  context        Context
+  data           Json?
+
+  @@map("normal_logs")
+  @@index([timestamp])
+  @@index([level, timestamp])
+  @@index([operationId, timestamp])
+  @@index([context.applicationEnvironmentRefId, context.systemSpecificationsRefId, level, timestamp])
+  // Note: For TTL (Time-To-Live) indexes to automatically purge old logs,
+  // you would typically configure this directly in MongoDB, not in Prisma schema.
+  // Example: db.normal_logs.createIndex( { "timestamp": 1 }, { expireAfterSeconds: <duration_in_seconds> } )
+}
+
+// Represents an audit log entry
+model AuditLog {
+  nativeId    String   @id @map("_id") @db.ObjectId
+  id          String   @unique @db.Uuid
+  timestamp   DateTime
+  event       String
+  outcome     String
+  message     String
+  tracingId   String
+  operationId String // Reference to Operation.id
+  actor       Actor
+  context     Context
+  data        Json?
+
+  @@map("audit_logs")
+  @@index([timestamp])
+  @@index([actor.user.identifier, timestamp])
+  @@index([action, outcome, timestamp])
+  @@index([targetId, timestamp])
+  @@index([ipAddress, timestamp])
+  @@index([context.applicationEnvironmentRefId, context.systemSpecificationsRefId, timestamp])
+}
+
+// Represents an event log entry for business KPIs and analytics
+model EventLog {
+  nativeId    String   @id @map("_id") @db.ObjectId
+  id          String   @unique @db.Uuid
+  timestamp   DateTime
+  event       String
+  outcome     String
+  message     String
+  tracingId   String
+  operationId String // Reference to Operation.id
+  actor       Actor
+  context     Context
+  data        Json?
+
+  @@map("event_logs")
+  @@index([timestamp])
+  @@index([eventName, timestamp])
+  @@index([eventName, outcome, timestamp])
+  @@index([operationId])
+  @@index([context.applicationEnvironmentRefId, context.systemSpecificationsRefId, timestamp])
+  // Note: For TTL (Time-To-Live) indexes to automatically purge old logs,
+  // you would typically configure this directly in MongoDB, not in Prisma schema.
+}
+
+// Stores static application environment details, referenced by logs and operations
+model ApplicationEnvironment {
+  id          String   @id @map("_id") @db.ObjectId // A unique ID for this specific application environment configuration
+  createdAt   DateTime // When this environment document was first recorded
+  serviceName String
+  serviceCode String
+  version     String
+  env         String
+  lang        String
+  langVersion String
+  processId   Int // Process ID at the time this environment config was first recorded
+
+  @@map("application_environments")
+  @@index([createdAt])
+  @@index([serviceCode])
+  @@index([serviceCode, version])
+  @@index([serviceCode, env])
+  @@index([serviceCode, version, env])
+  @@unique([serviceCode, version, env])
+}
+
+// Stores static system details, referenced by logs and operations
+model SystemSpecification {
+  id         String            @id @map("_id") @db.ObjectId // A unique ID for this specific system configuration
+  createdAt  DateTime // When this specification document was first recorded
+  product    ProductIdentifier
+  instanceId String?
+  machineId  String?
+  macAddress String?
+  os         String
+  arch       String
+  cpuCores   Int
+  memory     BigInt // total
+  swapSize   BigInt // total
+  diskSize   BigInt // total
+  pageSize   Int
+
+  @@map("system_specifications")
+  @@index([createdAt])
+  @@index([os, arch])
+  @@index([product.uuid, instanceId, machineId, macAddress, os, arch, cpuCores, memory, swapSize, diskSize, pageSize])
+  @@unique([product.uuid, instanceId, machineId, macAddress, os, arch, cpuCores, memory, swapSize, diskSize, pageSize])
+}

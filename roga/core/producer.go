@@ -1,4 +1,4 @@
-package core
+package roga
 
 import (
 	"github.com/google/uuid"
@@ -10,7 +10,7 @@ type DefaultProducer struct{ Producer }
 func (d DefaultProducer) LogFatal(
 	args LogArgs,
 	operation *Operation,
-	context Context,
+	currentSystemMetrics SystemMetrics,
 	framesToSkip int,
 	ch *chan Writable,
 ) *Log {
@@ -18,7 +18,7 @@ func (d DefaultProducer) LogFatal(
 		LevelFatal,
 		args,
 		operation,
-		context,
+		&currentSystemMetrics,
 		framesToSkip+1,
 		ch,
 	)
@@ -27,7 +27,7 @@ func (d DefaultProducer) LogFatal(
 func (d DefaultProducer) LogError(
 	args LogArgs,
 	operation *Operation,
-	context Context,
+	currentSystemMetrics SystemMetrics,
 	framesToSkip int,
 	ch *chan Writable,
 ) *Log {
@@ -35,7 +35,7 @@ func (d DefaultProducer) LogError(
 		LevelError,
 		args,
 		operation,
-		context,
+		&currentSystemMetrics,
 		framesToSkip+1,
 		ch,
 	)
@@ -44,7 +44,7 @@ func (d DefaultProducer) LogError(
 func (d DefaultProducer) LogWarn(
 	args LogArgs,
 	operation *Operation,
-	context Context,
+	currentSystemMetrics SystemMetrics,
 	framesToSkip int,
 	ch *chan Writable,
 ) *Log {
@@ -52,7 +52,7 @@ func (d DefaultProducer) LogWarn(
 		LevelWarn,
 		args,
 		operation,
-		context,
+		&currentSystemMetrics,
 		framesToSkip+1,
 		ch,
 	)
@@ -61,7 +61,7 @@ func (d DefaultProducer) LogWarn(
 func (d DefaultProducer) LogInfo(
 	args LogArgs,
 	operation *Operation,
-	context Context,
+	currentSystemMetrics SystemMetrics,
 	framesToSkip int,
 	ch *chan Writable,
 ) *Log {
@@ -69,7 +69,7 @@ func (d DefaultProducer) LogInfo(
 		LevelInfo,
 		args,
 		operation,
-		context,
+		&currentSystemMetrics,
 		framesToSkip+1,
 		ch,
 	)
@@ -78,7 +78,7 @@ func (d DefaultProducer) LogInfo(
 func (d DefaultProducer) LogDebug(
 	args LogArgs,
 	operation *Operation,
-	context Context,
+	currentSystemMetrics SystemMetrics,
 	framesToSkip int,
 	ch *chan Writable,
 ) *Log {
@@ -86,7 +86,39 @@ func (d DefaultProducer) LogDebug(
 		LevelDebug,
 		args,
 		operation,
-		context,
+		&currentSystemMetrics,
+		framesToSkip+1,
+		ch,
+	)
+}
+
+func (d DefaultProducer) AuditAction(
+	args AuditLogArgs,
+	operation *Operation,
+	framesToSkip int,
+	ch *chan Writable,
+) *Log {
+	return produceLog(
+		LevelInfo,
+		args.LogArgs,
+		operation,
+		nil,
+		framesToSkip+1,
+		ch,
+	)
+}
+
+func (d DefaultProducer) CaptureEvent(
+	args EventLogArgs,
+	operation *Operation,
+	framesToSkip int,
+	ch *chan Writable,
+) *Log {
+	return produceLog(
+		LevelInfo,
+		args.LogArgs,
+		operation,
+		nil,
 		framesToSkip+1,
 		ch,
 	)
@@ -95,7 +127,8 @@ func (d DefaultProducer) LogDebug(
 func (d DefaultProducer) BeginOperation(
 	args OperationArgs,
 	parent *Operation,
-	measurementInitiator *MeasurementHandler,
+	context *Context,
+	measurementInitiator MeasurementHandler,
 	ch *chan Writable,
 ) *Operation {
 	if ch == nil {
@@ -113,10 +146,12 @@ func (d DefaultProducer) BeginOperation(
 	if parent != nil {
 		operation.ParentId = &parent.Id
 		operation.BaseOperationId = parent.BaseOperationId
+	} else {
+		operation.Context = context
 	}
 
 	if measurementInitiator != nil {
-		(*measurementInitiator)(&operation.Measurements)
+		measurementInitiator(&operation.Measurements)
 	}
 
 	*ch <- operation
@@ -126,7 +161,7 @@ func (d DefaultProducer) BeginOperation(
 
 func (d DefaultProducer) EndOperation(
 	operation *Operation,
-	measurementFinalizer *MeasurementHandler,
+	measurementFinalizer MeasurementHandler,
 	ch *chan Writable,
 ) {
 	if operation == nil {
@@ -136,7 +171,7 @@ func (d DefaultProducer) EndOperation(
 	operation.EssentialMeasurements.EndTime = time.Now().UTC()
 
 	if measurementFinalizer != nil {
-		(*measurementFinalizer)(&operation.Measurements)
+		measurementFinalizer(&operation.Measurements)
 	}
 
 	*ch <- *operation
@@ -146,7 +181,7 @@ func produceLog(
 	logLevel Level,
 	logArgs LogArgs,
 	operation *Operation,
-	context Context,
+	currentSystemMetrics *SystemMetrics,
 	framesToSkip int,
 	ch *chan Writable,
 ) *Log {
@@ -158,7 +193,9 @@ func produceLog(
 
 	log.Level = logLevel
 
-	log.Context = context
+	if currentSystemMetrics != nil {
+		log.SystemMetrics = *currentSystemMetrics
+	}
 
 	log.Id = uuid.New()
 
