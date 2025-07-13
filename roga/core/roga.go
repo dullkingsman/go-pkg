@@ -763,11 +763,14 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup, index int) {
 	var stopped = false
 
 	for {
+		time.Sleep(1 * time.Second)
+
 		var operations []Operation
 
 		var logs []Log
 
 		if stopped {
+		CheckDrainedBeforeFinalStop:
 			for {
 				select {
 				case writable := <-r.channels.operational.writing.stdout:
@@ -785,7 +788,7 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup, index int) {
 
 					utils.LogInfo("roga:cleanup", "skipped stopping stdout")
 
-					break
+					break CheckDrainedBeforeFinalStop
 				}
 			}
 		}
@@ -800,12 +803,13 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup, index int) {
 				continue
 			}
 		case <-r.channels.flush.writing.stdout:
+		FlushAllPendingItems:
 			for {
 				select {
 				case writable := <-r.channels.operational.writing.stdout:
 					collectWritable(writable, &operations, &logs)
 				default:
-					break
+					break FlushAllPendingItems
 				}
 			}
 		default:
@@ -831,11 +835,14 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup, index int) {
 	var stopped = false
 
 	for {
+		time.Sleep(1 * time.Second)
+
 		var operations []Operation
 
 		var logs []Log
 
 		if stopped {
+		CheckDrainedBeforeFinalStop:
 			for {
 				select {
 				case writable := <-r.channels.operational.writing.file:
@@ -853,7 +860,7 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup, index int) {
 
 					utils.LogInfo("roga:cleanup", "skipped stopping external")
 
-					break
+					break CheckDrainedBeforeFinalStop
 				}
 			}
 		}
@@ -868,12 +875,13 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup, index int) {
 				continue
 			}
 		case <-r.channels.flush.writing.file:
+		FlushAllPendingItems:
 			for {
 				select {
 				case writable := <-r.channels.operational.writing.file:
 					collectWritable(writable, &operations, &logs)
 				default:
-					break
+					break FlushAllPendingItems
 				}
 			}
 		default:
@@ -899,12 +907,15 @@ func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup, index int) {
 	var stopped = false
 
 	for {
+		time.Sleep(1 * time.Second)
+
 		var operations []Operation
 
 		var logs []Log
 
 		if stopped {
 			for {
+			CheckDrainedBeforeFinalStop:
 				select {
 				case writable := <-r.channels.operational.writing.external:
 					collectWritable(writable, &operations, &logs)
@@ -921,7 +932,7 @@ func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup, index int) {
 
 					utils.LogInfo("roga:cleanup", "skipped stopping external")
 
-					break
+					break CheckDrainedBeforeFinalStop
 				}
 			}
 		}
@@ -936,12 +947,13 @@ func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup, index int) {
 				continue
 			}
 		case <-r.channels.flush.writing.external:
+		FlushAllPendingItems:
 			for {
 				select {
 				case writable := <-r.channels.operational.writing.external:
 					collectWritable(writable, &operations, &logs)
 				default:
-					break
+					break FlushAllPendingItems
 				}
 			}
 		default:

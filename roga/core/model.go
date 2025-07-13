@@ -1,6 +1,7 @@
 package roga
 
 import (
+	"fmt"
 	"github.com/google/uuid"
 	"os"
 	"sync"
@@ -332,3 +333,8 @@ type (
 	Type           uint
 	CloudProvider  uint
 )
+
+func (l Log) String() string {
+
+	return fmt.Sprintf("Log{Id: %v, Message: %s}", l.Id, l.Message)
+}
