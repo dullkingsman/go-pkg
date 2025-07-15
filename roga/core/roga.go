@@ -542,7 +542,6 @@ func (r *Roga) consumeProductionChannel() {
 				select {
 				case writable := <-r.channels.operational.production:
 					addWritableToQueue(writable, r)
-					break FlushProductionBreak
 				default:
 					r.channels.flush.queue.operation <- true
 					r.channels.flush.queue.log <- true
@@ -728,9 +727,7 @@ func (r *Roga) consumeLogQueue() {
 					}
 
 					logs = append(logs, log)
-					break FlushQueueBreak
 				default:
-
 					r.channels.flush.writing.stdout <- true
 					r.channels.flush.writing.file <- true
 					r.channels.flush.writing.external <- true
@@ -813,7 +810,6 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup, index int) {
 		case <-r.channels.flush.writing.stdout:
 		FlushAllPendingItems:
 			for {
-
 				select {
 				case writable := <-r.channels.operational.writing.stdout:
 					collectWritable(writable, &operations, &logs)
