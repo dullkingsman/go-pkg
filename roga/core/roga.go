@@ -509,6 +509,7 @@ func (r *Roga) consumeProductionChannel() {
 	var stopped = false
 
 	for {
+		time.Sleep(100 * time.Millisecond)
 		if stopped {
 			for {
 				select {
@@ -531,12 +532,12 @@ func (r *Roga) consumeProductionChannel() {
 		case <-r.channels.stop.production:
 			if !stopped {
 				stopped = true
-
 				utils.LogInfo("roga:ops", "signaled production consumption to stop ")
 
 				continue
 			}
 		case <-r.channels.flush.production:
+		FlushProductionBreak:
 			for {
 				select {
 				case writable := <-r.channels.operational.production:
@@ -544,8 +545,7 @@ func (r *Roga) consumeProductionChannel() {
 				default:
 					r.channels.flush.queue.operation <- true
 					r.channels.flush.queue.log <- true
-
-					break
+					break FlushProductionBreak
 				}
 			}
 		default:
@@ -569,9 +569,11 @@ func (r *Roga) consumeOperationQueue() {
 	var stopped = false
 
 	for {
+		time.Sleep(100 * time.Millisecond)
 		var operations []Operation
 
 		if stopped {
+		StopBreakStatement:
 			for {
 				select {
 				case operationId := <-r.channels.operational.queue.operation:
@@ -599,7 +601,7 @@ func (r *Roga) consumeOperationQueue() {
 
 					utils.LogInfo("roga:cleanup", "skipped stopping operation consumption")
 
-					break
+					break StopBreakStatement
 				}
 			}
 		}
@@ -614,6 +616,7 @@ func (r *Roga) consumeOperationQueue() {
 				continue
 			}
 		case <-r.channels.flush.queue.operation:
+		QueueOperationFlushBreak:
 			for {
 				select {
 				case operationId := <-r.channels.operational.queue.operation:
@@ -629,7 +632,7 @@ func (r *Roga) consumeOperationQueue() {
 					r.channels.flush.writing.file <- true
 					r.channels.flush.writing.external <- true
 
-					break
+					break QueueOperationFlushBreak
 				}
 			}
 		default:
@@ -666,9 +669,11 @@ func (r *Roga) consumeLogQueue() {
 	var stopped = false
 
 	for {
+		time.Sleep(100 * time.Millisecond)
 		var logs []Log
 
 		if stopped {
+		QueueOperationStopBreak:
 			for {
 				select {
 				case logId := <-r.channels.operational.queue.log:
@@ -696,7 +701,7 @@ func (r *Roga) consumeLogQueue() {
 
 					utils.LogInfo("roga:cleanup", "skipped stopping log consumption")
 
-					break
+					break QueueOperationStopBreak
 				}
 			}
 		}
@@ -711,6 +716,7 @@ func (r *Roga) consumeLogQueue() {
 				continue
 			}
 		case <-r.channels.flush.queue.log:
+		FlushQueueBreak:
 			for {
 				select {
 				case logId := <-r.channels.operational.queue.log:
@@ -726,7 +732,7 @@ func (r *Roga) consumeLogQueue() {
 					r.channels.flush.writing.file <- true
 					r.channels.flush.writing.external <- true
 
-					break
+					break FlushQueueBreak
 				}
 			}
 		default:
@@ -748,7 +754,6 @@ func (r *Roga) consumeLogQueue() {
 				logs[i] = log
 			}
 		}
-
 		r.dispatcher.DispatchLogs(logs, &r.channels.operational.writing)
 		logs = make([]Log, 0)
 	}
@@ -763,11 +768,14 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup, index int) {
 	var stopped = false
 
 	for {
+		time.Sleep(100 * time.Millisecond)
+
 		var operations []Operation
 
 		var logs []Log
 
 		if stopped {
+		CheckDrainedBeforeFinalStop:
 			for {
 				select {
 				case writable := <-r.channels.operational.writing.stdout:
@@ -785,7 +793,7 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup, index int) {
 
 					utils.LogInfo("roga:cleanup", "skipped stopping stdout")
 
-					break
+					break CheckDrainedBeforeFinalStop
 				}
 			}
 		}
@@ -800,12 +808,13 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup, index int) {
 				continue
 			}
 		case <-r.channels.flush.writing.stdout:
+		FlushAllPendingItems:
 			for {
 				select {
 				case writable := <-r.channels.operational.writing.stdout:
 					collectWritable(writable, &operations, &logs)
 				default:
-					break
+					break FlushAllPendingItems
 				}
 			}
 		default:
@@ -831,11 +840,14 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup, index int) {
 	var stopped = false
 
 	for {
+		time.Sleep(100 * time.Millisecond)
+
 		var operations []Operation
 
 		var logs []Log
 
 		if stopped {
+		CheckDrainedBeforeFinalStop:
 			for {
 				select {
 				case writable := <-r.channels.operational.writing.file:
@@ -853,7 +865,7 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup, index int) {
 
 					utils.LogInfo("roga:cleanup", "skipped stopping external")
 
-					break
+					break CheckDrainedBeforeFinalStop
 				}
 			}
 		}
@@ -868,12 +880,13 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup, index int) {
 				continue
 			}
 		case <-r.channels.flush.writing.file:
+		FlushAllPendingItems:
 			for {
 				select {
 				case writable := <-r.channels.operational.writing.file:
 					collectWritable(writable, &operations, &logs)
 				default:
-					break
+					break FlushAllPendingItems
 				}
 			}
 		default:
@@ -899,12 +912,15 @@ func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup, index int) {
 	var stopped = false
 
 	for {
+		time.Sleep(100 * time.Millisecond)
+
 		var operations []Operation
 
 		var logs []Log
 
 		if stopped {
 			for {
+			CheckDrainedBeforeFinalStop:
 				select {
 				case writable := <-r.channels.operational.writing.external:
 					collectWritable(writable, &operations, &logs)
@@ -921,7 +937,7 @@ func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup, index int) {
 
 					utils.LogInfo("roga:cleanup", "skipped stopping external")
 
-					break
+					break CheckDrainedBeforeFinalStop
 				}
 			}
 		}
@@ -936,12 +952,13 @@ func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup, index int) {
 				continue
 			}
 		case <-r.channels.flush.writing.external:
+		FlushAllPendingItems:
 			for {
 				select {
 				case writable := <-r.channels.operational.writing.external:
 					collectWritable(writable, &operations, &logs)
 				default:
-					break
+					break FlushAllPendingItems
 				}
 			}
 		default:
