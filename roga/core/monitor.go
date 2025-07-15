@@ -54,38 +54,41 @@ func (r *Roga) monitorAndUpdateSystemMetrics() {
 		case <-r.metricMonitorControls.resume:
 			continue
 		default:
-			var (
-				cpuUsage, cpuErr                   = r.monitor.GetCPUUsage()
-				totalMemory, freeMemory, memoryErr = r.monitor.GetMemoryStats()
-				totalSwap, freeSwap, swapErr       = r.monitor.GetSwapStats()
-				totalDisk, freeDisk, diskErr       = r.monitor.GetDiskStats("/")
-			)
-
-			r.metricsLock.Lock()
-
-			if cpuErr == nil {
-				r.currentSystemMetrics.CpuUsage = cpuUsage
-			}
-
-			if memoryErr == nil {
-				r.context.System.Memory = totalMemory
-				r.currentSystemMetrics.AvailableMemory = freeMemory
-			}
-
-			if swapErr == nil {
-				r.context.System.SwapSize = totalSwap
-				r.currentSystemMetrics.AvailableSwap = freeSwap
-			}
-
-			if diskErr == nil {
-				r.context.System.DiskSize = totalDisk
-				r.currentSystemMetrics.AvailableDisk = freeDisk
-			}
-
-			r.metricsLock.Unlock()
+			SetCurrentSystemMetrics(r)
 
 			time.Sleep(r.config.systemStatsCheckInterval * time.Second)
 		}
+	}
+}
+
+func SetCurrentSystemMetrics(r *Roga) {
+	r.metricsLock.Lock()
+	defer r.metricsLock.Unlock()
+
+	var (
+		cpuUsage, cpuErr                   = r.monitor.GetCPUUsage()
+		totalMemory, freeMemory, memoryErr = r.monitor.GetMemoryStats()
+		totalSwap, freeSwap, swapErr       = r.monitor.GetSwapStats()
+		totalDisk, freeDisk, diskErr       = r.monitor.GetDiskStats("/")
+	)
+
+	if cpuErr == nil {
+		r.currentSystemMetrics.CpuUsage = cpuUsage
+	}
+
+	if memoryErr == nil {
+		r.context.System.Memory = totalMemory
+		r.currentSystemMetrics.AvailableMemory = freeMemory
+	}
+
+	if swapErr == nil {
+		r.context.System.SwapSize = totalSwap
+		r.currentSystemMetrics.AvailableSwap = freeSwap
+	}
+
+	if diskErr == nil {
+		r.context.System.DiskSize = totalDisk
+		r.currentSystemMetrics.AvailableDisk = freeDisk
 	}
 }
 

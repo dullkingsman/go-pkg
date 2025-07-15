@@ -203,23 +203,27 @@ func (r *Roga) Flush() {
 }
 
 func (r *Roga) StopConsuming() {
-	r.channels.stop.writing.stdout <- true
-	r.channels.stop.writing.file <- true
-	r.channels.stop.writing.external <- true
+	r.channels.stop.production <- true
 
-	utils.LogInfo("roga:cleanup:consumption", "stopped consuming writes")
+	utils.LogInfo("roga:cleanup:consumption", "stopped consuming production")
 
 	r.channels.stop.queue.operation <- true
 	r.channels.stop.queue.log <- true
 
 	utils.LogInfo("roga:cleanup:consumption", "stopped consuming queues")
 
-	r.channels.stop.production <- true
+	r.channels.stop.writing.stdout <- true
+	r.channels.stop.writing.file <- true
+	r.channels.stop.writing.external <- true
 
-	utils.LogInfo("roga:cleanup:consumption", "stopped consuming production")
+	utils.LogInfo("roga:cleanup:consumption", "stopped consuming writes")
 }
 
-func (r *Roga) Stop() {
+func (r *Roga) Stop(flush ...bool) {
+	if len(flush) > 0 && flush[0] {
+		r.Flush()
+	}
+
 	r.StopIdleChannelMonitoring()
 
 	r.StopSystemMonitoring()
@@ -448,6 +452,8 @@ func (o *Operation) EndOperation(measurementFinalizer ...MeasurementHandler) {
 }
 
 func (r *Roga) startingMonitoring() {
+	SetCurrentSystemMetrics(r)
+
 	go r.monitorAndFlushIdleChannels()
 
 	go r.monitorAndUpdateSystemMetrics()
@@ -518,8 +524,8 @@ func (r *Roga) consumeProductionChannel() {
 				default:
 					close(r.channels.operational.production)
 
-					r.channels.stop.queue.operation <- true
-					r.channels.stop.queue.log <- true
+					//r.channels.stop.queue.operation <- true
+					//r.channels.stop.queue.log <- true
 
 					utils.LogInfo("roga:cleanup", "stopped production consumption")
 
@@ -587,9 +593,9 @@ func (r *Roga) consumeOperationQueue() {
 				default:
 					var stop = len(r.channels.operational.production) == 0
 
-					r.channels.stop.writing.stdout <- true
-					r.channels.stop.writing.file <- true
-					r.channels.stop.writing.external <- true
+					//r.channels.stop.writing.stdout <- true
+					//r.channels.stop.writing.file <- true
+					//r.channels.stop.writing.external <- true
 
 					if stop {
 						close(r.channels.operational.queue.operation)
@@ -687,9 +693,9 @@ func (r *Roga) consumeLogQueue() {
 				default:
 					var stop = len(r.channels.operational.production) == 0
 
-					r.channels.stop.writing.stdout <- true
-					r.channels.stop.writing.file <- true
-					r.channels.stop.writing.external <- true
+					//r.channels.stop.writing.stdout <- true
+					//r.channels.stop.writing.file <- true
+					//r.channels.stop.writing.external <- true
 
 					if stop {
 						close(r.channels.operational.queue.log)
@@ -858,7 +864,7 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup, index int) {
 					if stop {
 						close(r.channels.operational.writing.file)
 
-						utils.LogInfo("roga:cleanup", "stopped external")
+						utils.LogInfo("roga:cleanup", "stopped files")
 
 						return
 					}

@@ -60,8 +60,7 @@ func TestBasicLogging(t *testing.T) {
 	// We don't test Fatal as it would exit the program
 
 	// Clean up
-	r.Flush()
-	r.Stop()
+	r.Stop(true)
 }
 
 // TestOperationManagement tests the creation and management of operations
@@ -120,8 +119,7 @@ func TestOperationManagement(t *testing.T) {
 	op.EndOperation()
 
 	// Clean up
-	r.Flush()
-	r.Stop()
+	r.Stop(true)
 }
 
 // TestMonitoring tests the system monitoring functionality
@@ -150,7 +148,7 @@ func TestMonitoring(t *testing.T) {
 	r.StopSystemMonitoring()
 
 	// Clean up
-	r.Stop()
+	r.Stop(true)
 }
 
 // TestFileWriting tests writing logs and operations to files

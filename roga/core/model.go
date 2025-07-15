@@ -202,7 +202,7 @@ type (
 	}
 
 	Operation struct {
-		Writable
+		Writable              `json:"-"`
 		r                     *Roga
 		Id                    uuid.UUID             `json:"id"`
 		Name                  string                `json:"name"`
@@ -219,7 +219,7 @@ type (
 	}
 
 	Log struct {
-		Writable
+		Writable       `json:"-"`
 		Id             uuid.UUID      `json:"id"`
 		Type           Type           `json:"type"`
 		Event          *string        `json:"event,omitempty"`
