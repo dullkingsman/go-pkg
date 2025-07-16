@@ -1,6 +1,7 @@
 package roga
 
 import (
+	"github.com/dullkingsman/go-pkg/utils"
 	"os"
 	"runtime"
 	"time"
@@ -85,7 +86,7 @@ var (
 	}
 
 	defaultRogaConfig = Config{
-		Instance:   &defaultInstanceConfig,
+		Instance:   utils.PtrOf(defaultInstanceConfig.Outer()),
 		Producer:   &DefaultProducer{},
 		Monitor:    &DefaultMonitor{},
 		Dispatcher: &DefaultDispatcher{},

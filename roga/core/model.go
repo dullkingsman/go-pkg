@@ -32,7 +32,7 @@ type (
 	Config struct {
 		Name       string
 		Code       string
-		Instance   *InstanceConfig
+		Instance   *OuterInstanceConfig
 		Producer   Producer
 		Monitor    Monitor
 		Dispatcher Dispatcher
@@ -59,6 +59,28 @@ type (
 		fileLogsDirectoryFormatLayout string // time format layout
 		operationsFileName            string
 		logsFileName                  string
+	}
+
+	OuterInstanceConfig struct {
+		maxOperationQueueSize         *int
+		maxLogQueueSize               *int
+		maxProductionChannelItems     *int
+		maxStdoutWriterChannelItems   *int
+		maxFileWriterChannelItems     *int
+		maxExternalWriterChannelItems *int
+		maxStdoutWriters              *int
+		maxFileWriters                *int
+		maxExternalWriters            *int
+		idleChannelFlushInterval      *time.Duration
+		systemStatsCheckInterval      *time.Duration // in seconds
+		writeToStdout                 *bool
+		writeToFile                   *bool
+		writeToExternal               *bool
+		fileWriterBasePath            *string
+		fileLogsDirectoryGranularity  *time.Duration
+		fileLogsDirectoryFormatLayout *string // time format layout
+		operationsFileName            *string
+		logsFileName                  *string
 	}
 
 	Producer interface {

@@ -19,7 +19,7 @@ func Init(config ...Config) Roga {
 		var __config = config[0]
 
 		if __config.Instance != nil {
-			_config.Instance = __config.Instance
+			_config.Instance = __config.Instance.FromOuter()
 		}
 
 		if __config.Producer != nil {
@@ -39,9 +39,11 @@ func Init(config ...Config) Roga {
 		}
 	}
 
+	var instanceConfig = _config.Instance.Inner()
+
 	var instance = Roga{
 		context:         defaultOperationContext,
-		config:          *_config.Instance,
+		config:          instanceConfig,
 		metricsLock:     &sync.RWMutex{},
 		lastWriteLock:   &sync.RWMutex{},
 		consumptionSync: &sync.WaitGroup{},
@@ -75,15 +77,15 @@ func Init(config ...Config) Roga {
 		},
 		channels: channels{
 			operational: channelGroup{
-				production: make(chan Writable, _config.Instance.maxProductionChannelItems),
+				production: make(chan Writable, instanceConfig.maxProductionChannelItems),
 				queue: queueChannels{
-					operation: make(chan uuid.UUID, _config.Instance.maxOperationQueueSize),
-					log:       make(chan uuid.UUID, _config.Instance.maxLogQueueSize),
+					operation: make(chan uuid.UUID, instanceConfig.maxOperationQueueSize),
+					log:       make(chan uuid.UUID, instanceConfig.maxLogQueueSize),
 				},
 				writing: writingChannels{
-					stdout:   make(chan Writable, _config.Instance.maxStdoutWriterChannelItems),
-					file:     make(chan Writable, _config.Instance.maxFileWriterChannelItems),
-					external: make(chan Writable, _config.Instance.maxExternalWriterChannelItems),
+					stdout:   make(chan Writable, instanceConfig.maxStdoutWriterChannelItems),
+					file:     make(chan Writable, instanceConfig.maxFileWriterChannelItems),
+					external: make(chan Writable, instanceConfig.maxExternalWriterChannelItems),
 				},
 			},
 			flush: actionChannelGroup{

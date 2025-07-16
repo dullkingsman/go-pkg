@@ -697,3 +697,117 @@ func writeToStream(stream string, operations *[]Operation, logs *[]Log, r *Roga)
 
 	r.lastWriteLock.Unlock()
 }
+
+func (oic *OuterInstanceConfig) FromOuter() *OuterInstanceConfig {
+	return utils.PtrOf(oic.Inner().Outer())
+}
+
+func (oic *OuterInstanceConfig) Inner() InstanceConfig {
+	var _config = defaultInstanceConfig
+
+	if oic == nil {
+		return _config
+	}
+
+	if oic.maxOperationQueueSize != nil {
+		_config.maxOperationQueueSize = *oic.maxOperationQueueSize
+	}
+
+	if oic.maxLogQueueSize != nil {
+		_config.maxLogQueueSize = *oic.maxLogQueueSize
+	}
+
+	if oic.maxProductionChannelItems != nil {
+		_config.maxProductionChannelItems = *oic.maxProductionChannelItems
+	}
+
+	if oic.maxStdoutWriterChannelItems != nil {
+		_config.maxStdoutWriterChannelItems = *oic.maxStdoutWriterChannelItems
+	}
+
+	if oic.maxFileWriterChannelItems != nil {
+		_config.maxFileWriterChannelItems = *oic.maxFileWriterChannelItems
+	}
+
+	if oic.maxExternalWriterChannelItems != nil {
+		_config.maxExternalWriterChannelItems = *oic.maxExternalWriterChannelItems
+	}
+
+	if oic.maxStdoutWriters != nil {
+		_config.maxStdoutWriters = *oic.maxStdoutWriters
+	}
+
+	if oic.maxFileWriters != nil {
+		_config.maxFileWriters = *oic.maxFileWriters
+	}
+
+	if oic.maxExternalWriters != nil {
+		_config.maxExternalWriters = *oic.maxExternalWriters
+	}
+
+	if oic.idleChannelFlushInterval != nil {
+		_config.idleChannelFlushInterval = *oic.idleChannelFlushInterval
+	}
+
+	if oic.systemStatsCheckInterval != nil {
+		_config.systemStatsCheckInterval = *oic.systemStatsCheckInterval
+	}
+
+	if oic.writeToStdout != nil {
+		_config.writeToStdout = *oic.writeToStdout
+	}
+
+	if oic.writeToFile != nil {
+		_config.writeToFile = *oic.writeToFile
+	}
+
+	if oic.writeToExternal != nil {
+		_config.writeToExternal = *oic.writeToExternal
+	}
+
+	if oic.fileWriterBasePath != nil {
+		_config.fileWriterBasePath = *oic.fileWriterBasePath
+	}
+
+	if oic.fileLogsDirectoryGranularity != nil {
+		_config.fileLogsDirectoryGranularity = *oic.fileLogsDirectoryGranularity
+	}
+
+	if oic.fileLogsDirectoryFormatLayout != nil {
+		_config.fileLogsDirectoryFormatLayout = *oic.fileLogsDirectoryFormatLayout
+	}
+
+	if oic.operationsFileName != nil {
+		_config.operationsFileName = *oic.operationsFileName
+	}
+
+	if oic.logsFileName != nil {
+		_config.logsFileName = *oic.logsFileName
+	}
+
+	return _config
+}
+
+func (ic InstanceConfig) Outer() OuterInstanceConfig {
+	return OuterInstanceConfig{
+		maxOperationQueueSize:         &ic.maxOperationQueueSize,
+		maxLogQueueSize:               &ic.maxLogQueueSize,
+		maxProductionChannelItems:     &ic.maxProductionChannelItems,
+		maxStdoutWriterChannelItems:   &ic.maxStdoutWriterChannelItems,
+		maxFileWriterChannelItems:     &ic.maxFileWriterChannelItems,
+		maxExternalWriterChannelItems: &ic.maxExternalWriterChannelItems,
+		maxStdoutWriters:              &ic.maxStdoutWriters,
+		maxFileWriters:                &ic.maxFileWriters,
+		maxExternalWriters:            &ic.maxExternalWriters,
+		idleChannelFlushInterval:      &ic.idleChannelFlushInterval,
+		systemStatsCheckInterval:      &ic.systemStatsCheckInterval,
+		writeToStdout:                 &ic.writeToStdout,
+		writeToFile:                   &ic.writeToFile,
+		writeToExternal:               &ic.writeToExternal,
+		fileWriterBasePath:            &ic.fileWriterBasePath,
+		fileLogsDirectoryGranularity:  &ic.fileLogsDirectoryGranularity,
+		fileLogsDirectoryFormatLayout: &ic.fileLogsDirectoryFormatLayout,
+		operationsFileName:            &ic.operationsFileName,
+		logsFileName:                  &ic.logsFileName,
+	}
+}
