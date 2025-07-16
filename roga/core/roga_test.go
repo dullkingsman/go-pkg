@@ -63,6 +63,74 @@ func TestBasicLogging(t *testing.T) {
 	r.Stop(true)
 }
 
+// TestBasicLogging tests basic logging functionality
+func TestBasicOperationLogging(t *testing.T) {
+	// Create a temporary directory for logs
+	tempDir, err := os.MkdirTemp("", "roga_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Configure Roga to write to files
+	customConfig := Config{
+		Instance: &OuterInstanceConfig{
+			writeToStdout:      utils.PtrOf(false),
+			writeToFile:        utils.PtrOf(true),
+			writeToExternal:    utils.PtrOf(false),
+			fileWriterBasePath: &tempDir,
+		},
+	}
+
+	r := Init(customConfig)
+	r.Start()
+
+	op := r.BeginOperation(OperationArgs{
+		Name: "TestOperation",
+	})
+
+	if op == nil {
+		t.Fatal("Expected operation to be created, got nil")
+	}
+
+	if op.Name != "TestOperation" {
+		t.Errorf("Expected operation name to be TestOperation, got %s", op.Name)
+	}
+
+	op.EndOperation()
+
+	r.Stop(true)
+
+	time.Sleep(2 * time.Second)
+
+	// Verify operation was logged
+	var logsBaseDir = tempDir + getCurrentTimeRoundedTo(
+		r.config.fileLogsDirectoryGranularity,
+	).UTC().Format(
+		r.config.fileLogsDirectoryFormatLayout,
+	)
+
+	files, err := os.ReadDir(logsBaseDir)
+	if err != nil {
+		t.Fatalf("Failed to read temp directory: %v", err)
+	}
+
+	foundOperationsFile := false
+	for _, file := range files {
+		if file.Name() == DefaultOperationsFileName {
+			foundOperationsFile = true
+			break
+		}
+	}
+
+	if !foundOperationsFile {
+		t.Errorf("Expected to find operations file %s", DefaultOperationsFileName)
+	}
+
+	// Clean up
+	r.Stop(true)
+}
+
 // TestOperationManagement tests the creation and management of operations
 func TestOperationManagement(t *testing.T) {
 	// Initialize Roga
@@ -126,8 +194,8 @@ func TestOperationManagement(t *testing.T) {
 func TestMonitoring(t *testing.T) {
 	// Create a custom configuration
 	customConfig := Config{
-		Instance: &InstanceConfig{
-			systemStatsCheckInterval: 1, // Check every second for faster testing
+		Instance: &OuterInstanceConfig{
+			systemStatsCheckInterval: utils.PtrOf(time.Duration(1)), // Check every second for faster testing
 		},
 	}
 
@@ -162,11 +230,11 @@ func TestFileWriting(t *testing.T) {
 
 	// Create a custom configuration that writes to files
 	customConfig := Config{
-		Instance: &InstanceConfig{
-			writeToStdout:      false,
-			writeToFile:        true,
-			writeToExternal:    false,
-			fileWriterBasePath: tempDir,
+		Instance: &OuterInstanceConfig{
+			writeToStdout:      utils.PtrOf(false),
+			writeToFile:        utils.PtrOf(true),
+			writeToExternal:    utils.PtrOf(false),
+			fileWriterBasePath: &tempDir,
 		},
 	}
 
@@ -193,14 +261,19 @@ func TestFileWriting(t *testing.T) {
 	op := r.BeginOperation(opArgs)
 	op.EndOperation()
 
-	// Flush to ensure writing to files
-	r.Flush()
-
 	// Stop Roga
-	//r.Stop()
+	r.Stop(true)
+
+	time.Sleep(2 * time.Second)
+
+	var logsBaseDir = tempDir + getCurrentTimeRoundedTo(
+		r.config.fileLogsDirectoryGranularity,
+	).UTC().Format(
+		r.config.fileLogsDirectoryFormatLayout,
+	)
 
 	// Verify that log files were created
-	files, err := os.ReadDir(tempDir)
+	files, err := os.ReadDir(logsBaseDir)
 	if err != nil {
 		t.Fatalf("Failed to read temp directory: %v", err)
 	}
@@ -209,41 +282,23 @@ func TestFileWriting(t *testing.T) {
 		t.Error("Expected log files to be created, but directory is empty")
 	}
 
-	// Look for the logs directory (which should be named with a timestamp)
-	var logsDir string
-	for _, file := range files {
-		if file.IsDir() {
-			logsDir = file.Name()
-			break
-		}
-	}
-
-	if logsDir == "" {
-		t.Fatal("Expected to find a logs directory")
-	}
-
-	// Check for log files in the logs directory
-	logFiles, err := os.ReadDir(tempDir + "/" + logsDir)
-	if err != nil {
-		t.Fatalf("Failed to read logs directory: %v", err)
-	}
-
 	foundOperationsFile := false
 	foundLogsFile := false
 
-	for _, file := range logFiles {
+	for _, file := range files {
 		if file.Name() == DefaultOperationsFileName {
 			foundOperationsFile = true
 		}
-		if file.Name() == DefaultLogsFileName {
+		if file.Name() == "normal."+DefaultLogsFileName {
 			foundLogsFile = true
 		}
 	}
 
+	if !foundLogsFile {
+		t.Errorf("Expected to find logs file %s", "normal."+DefaultLogsFileName)
+	}
+
 	if !foundOperationsFile {
 		t.Errorf("Expected to find operations file %s", DefaultOperationsFileName)
-	}
-	if !foundLogsFile {
-		t.Errorf("Expected to find logs file %s", DefaultLogsFileName)
 	}
 }
