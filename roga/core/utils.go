@@ -533,7 +533,7 @@ func getCurrentTimeRoundedTo(interval time.Duration) time.Time {
 }
 
 // getLogFileDescriptor returns a file descriptor for the given file name in the log base directory
-func getLogFileDescriptor(r *Roga, operations ...bool) (normal *os.File, audit *os.File, event *os.File, cleanupFunc func(file *os.File), err error) {
+func getLogFileDescriptor(r *Roga, operations ...bool) (normal *os.File, audit *os.File, event *os.File, operation *os.File, cleanupFunc func(file *os.File), err error) {
 	var isOperations = false
 
 	if len(operations) > 0 {
@@ -554,17 +554,22 @@ func getLogFileDescriptor(r *Roga, operations ...bool) (normal *os.File, audit *
 	}
 
 	var (
-		normalFilePath = logsBasePath + "/"
-		auditFilePath  = normalFilePath
-		eventFilePath  = normalFilePath
+		normalFilePath    = logsBasePath + "/"
+		auditFilePath     = normalFilePath
+		eventFilePath     = normalFilePath
+		operationFilePath = normalFilePath
 	)
 
 	if isOperations {
 		normalFilePath += r.config.operationsFileName
+		operationFilePath += r.config.operationsFileName
+		auditFilePath += "audit." + r.config.logsFileName
+		eventFilePath += "event." + r.config.logsFileName
 	} else {
 		normalFilePath += "normal." + r.config.logsFileName
 		auditFilePath += "audit." + r.config.logsFileName
 		eventFilePath += "event." + r.config.logsFileName
+		operationFilePath += r.config.operationsFileName
 	}
 
 	normal, err = os.OpenFile(normalFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -596,6 +601,18 @@ func getLogFileDescriptor(r *Roga, operations ...bool) (normal *os.File, audit *
 	if err != nil || event == nil {
 		if err == nil {
 			err = errors.New("could not open event file " + utils.GreyString(eventFilePath))
+		}
+
+		utils.LogError("roga:file-descriptor", err.Error())
+
+		return
+	}
+
+	operation, err = os.OpenFile(operationFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+
+	if err != nil || operation == nil {
+		if err == nil {
+			err = errors.New("could not open operations file " + utils.GreyString(operationFilePath))
 		}
 
 		utils.LogError("roga:file-descriptor", err.Error())
@@ -649,7 +666,7 @@ func writeToStream(stream string, operations *[]Operation, logs *[]Log, r *Roga)
 		}
 	case "file":
 		if hasOperations {
-			var file, _, _, cleanupFunc, err = getLogFileDescriptor(r, true)
+			var _, _, _, file, cleanupFunc, err = getLogFileDescriptor(r, true)
 
 			if err == nil {
 				r.writer.WriteOperationsToFile(*operations, file, r)
@@ -659,7 +676,7 @@ func writeToStream(stream string, operations *[]Operation, logs *[]Log, r *Roga)
 		}
 
 		if hasLogs {
-			var normal, audit, event, cleanupFunc, err = getLogFileDescriptor(r)
+			var normal, audit, event, _, cleanupFunc, err = getLogFileDescriptor(r)
 
 			if err == nil {
 				r.writer.WriteLogsToFile(*logs, normal, audit, event, r)
