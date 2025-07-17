@@ -28,7 +28,7 @@ func (d DefaultWriter) WriteOperationsToStdout(items []Operation, r *Roga) {
 		utils.LogInfo(item.Name, "finished in "+utils.GreyString(
 			strconv.FormatInt(item.EssentialMeasurements.EndTime.Sub(
 				item.EssentialMeasurements.StartTime,
-			).Milliseconds(), 64)+"ms"+additional,
+			).Milliseconds(), 10)+"ms"+additional,
 		))
 	}
 }

@@ -616,14 +616,10 @@ func getLogFileDescriptor(r *Roga, operations ...bool) (normal *os.File, audit *
 
 func addWritableToQueue(writable Writable, r *Roga) {
 	if operation, ok := writable.(Operation); ok {
-		var _, alreadyInBuffer = r.buffers.operations[operation.Id]
-
-		if !alreadyInBuffer {
-			return
+		if _, exists := r.buffers.operations[operation.Id]; !exists {
+			r.buffers.operations[operation.Id] = operation
+			r.channels.operational.queue.operation <- operation.Id
 		}
-
-		r.buffers.operations[operation.Id] = operation
-		r.channels.operational.queue.operation <- operation.Id
 	} else if log, ok := writable.(Log); ok {
 		r.buffers.logs[log.Id] = log
 		r.channels.operational.queue.log <- log.Id

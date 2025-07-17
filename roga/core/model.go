@@ -360,3 +360,7 @@ func (l Log) String() string {
 
 	return fmt.Sprintf("Log{Id: %v, Message: %s}", l.Id, l.Message)
 }
+
+func (o Operation) String() string {
+	return fmt.Sprintf("")
+}
