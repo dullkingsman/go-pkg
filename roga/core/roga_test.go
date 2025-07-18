@@ -99,7 +99,8 @@ func TestBasicOperationLogging(t *testing.T) {
 
 	op.EndOperation()
 
-	r.Stop(true)
+	//r.Stop(true)
+	r.Flush()
 
 	time.Sleep(2 * time.Second)
 
@@ -126,8 +127,6 @@ func TestBasicOperationLogging(t *testing.T) {
 	if !foundOperationsFile {
 		t.Errorf("Expected to find operations file %s", DefaultOperationsFileName)
 	}
-
-	// Clean up
 	r.Stop(true)
 }
 
@@ -159,7 +158,7 @@ func TestOperationManagement(t *testing.T) {
 
 	// Log within the operation
 	logArgs := LogArgs{
-		Message: "Test log within operation",
+		Message: "Test log within operation (outer)",
 		Actor:   actor,
 	}
 	op.LogInfo(logArgs)
@@ -180,6 +179,11 @@ func TestOperationManagement(t *testing.T) {
 		t.Errorf("Expected nested operation to have a parent ID")
 	}
 
+	logArgsInner := LogArgs{
+		Message: "Test log within operation(innter)",
+		Actor:   actor,
+	}
+	nestedOp.LogInfo(logArgsInner)
 	// End the nested operation
 	nestedOp.EndOperation()
 
