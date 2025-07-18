@@ -31,8 +31,8 @@ const (
 	PriorityHigh     Priority = 2
 	PriorityCritical Priority = 4
 
-	ActorTypeUser           ActorType = 0 // user
-	ActorTypeSystem         ActorType = 1 // system
+	ActorTypeSystem         ActorType = 0 // system
+	ActorTypeUser           ActorType = 1 // user
 	ActorTypeExternalSystem ActorType = 2 // external system
 
 	DefaultLogQueueSize               int = 1000
@@ -86,11 +86,13 @@ var (
 	}
 
 	defaultRogaConfig = Config{
-		Instance:   utils.PtrOf(defaultInstanceConfig.Outer()),
-		Producer:   &DefaultProducer{},
-		Monitor:    &DefaultMonitor{},
-		Dispatcher: &DefaultDispatcher{},
-		Writer:     &DefaultWriter{},
+		Instance:                 utils.PtrOf(defaultInstanceConfig.Outer()),
+		StdoutOperationFormatter: &DefaultOperationFormatter{},
+		StdoutLogFormatter:       &DefaultLogFormatter{},
+		Producer:                 &DefaultProducer{},
+		Monitor:                  &DefaultMonitor{},
+		Dispatcher:               &DefaultDispatcher{},
+		Writer:                   &DefaultWriter{},
 	}
 
 	defaultInstanceConfig = InstanceConfig{

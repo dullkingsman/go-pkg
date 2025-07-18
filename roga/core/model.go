@@ -1,7 +1,6 @@
 package roga
 
 import (
-	"fmt"
 	"github.com/google/uuid"
 	"os"
 	"sync"
@@ -16,12 +15,15 @@ type (
 		channels                   channels
 		metricsLock                *sync.RWMutex
 		consumptionSync            *sync.WaitGroup
+		writeSync                  *sync.WaitGroup
 		started                    bool
 		lastWriteLock              *sync.RWMutex
 		lastWrite                  time.Time
 		rootOperation              Operation
 		context                    Context
 		currentSystemMetrics       SystemMetrics
+		stdoutLogFormatter         Formatter[Log]
+		stdoutOperationFormatter   Formatter[Operation]
 		producer                   Producer
 		monitor                    Monitor
 		dispatcher                 Dispatcher
@@ -30,13 +32,15 @@ type (
 	}
 
 	Config struct {
-		Name       string
-		Code       string
-		Instance   *OuterInstanceConfig
-		Producer   Producer
-		Monitor    Monitor
-		Dispatcher Dispatcher
-		Writer     Writer
+		Name                     string
+		Code                     string
+		Instance                 *OuterInstanceConfig
+		StdoutLogFormatter       Formatter[Log]
+		StdoutOperationFormatter Formatter[Operation]
+		Producer                 Producer
+		Monitor                  Monitor
+		Dispatcher               Dispatcher
+		Writer                   Writer
 	}
 
 	InstanceConfig struct {
@@ -118,6 +122,10 @@ type (
 		) []uuid.UUID // return the ids of ones that were not dispatched
 	}
 
+	Formatter[T any] interface {
+		Format(value T) string
+	}
+
 	Writer interface {
 		WriteOperationsToStdout(items []Operation, r *Roga)
 		WriteOperationsToFile(items []Operation, file *os.File, r *Roga)
@@ -128,14 +136,19 @@ type (
 	}
 
 	Writable interface {
-		String() string
+		String(r *Roga) string
 	}
 
 	MeasurementHandler func(*map[string]float64)
 
 	buffers struct {
-		operations map[uuid.UUID]Operation
-		logs       map[uuid.UUID]Log
+		operations buffer[string, Operation]
+		logs       buffer[uuid.UUID, Log]
+	}
+
+	buffer[T comparable, H any] struct {
+		collection map[T]H
+		lock       *sync.RWMutex
 	}
 
 	monitorControls struct {
@@ -157,7 +170,7 @@ type (
 	}
 
 	queueChannels struct {
-		operation chan uuid.UUID
+		operation chan string
 		log       chan uuid.UUID
 	}
 
@@ -187,7 +200,7 @@ type (
 	OperationArgs struct {
 		Name        string  `json:"name"`
 		Description *string `json:"description,omitempty"`
-		Actor       Actor   `json:"actor"`
+		Actor       *Actor  `json:"actor"`
 	}
 
 	LogArgs struct {
@@ -196,7 +209,7 @@ type (
 		Event          *string         `json:"event,omitempty"`
 		Outcome        *string         `json:"outcome,omitempty"`
 		Message        string          `json:"message"`
-		Actor          Actor           `json:"actor"`
+		Actor          *Actor          `json:"actor"`
 		Data           *interface{}    `json:"data,omitempty"`
 	}
 
@@ -355,12 +368,3 @@ type (
 	Type           uint
 	CloudProvider  uint
 )
-
-func (l Log) String() string {
-
-	return fmt.Sprintf("Log{Id: %v, Message: %s}", l.Id, l.Message)
-}
-
-func (o Operation) String() string {
-	return fmt.Sprintf("")
-}

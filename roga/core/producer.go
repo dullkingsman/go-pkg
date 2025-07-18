@@ -16,6 +16,7 @@ func (d DefaultProducer) LogFatal(
 ) *Log {
 	return produceLog(
 		LevelFatal,
+		TypeNormal,
 		args,
 		operation,
 		&currentSystemMetrics,
@@ -33,6 +34,7 @@ func (d DefaultProducer) LogError(
 ) *Log {
 	return produceLog(
 		LevelError,
+		TypeNormal,
 		args,
 		operation,
 		&currentSystemMetrics,
@@ -50,6 +52,7 @@ func (d DefaultProducer) LogWarn(
 ) *Log {
 	return produceLog(
 		LevelWarn,
+		TypeNormal,
 		args,
 		operation,
 		&currentSystemMetrics,
@@ -67,6 +70,7 @@ func (d DefaultProducer) LogInfo(
 ) *Log {
 	return produceLog(
 		LevelInfo,
+		TypeNormal,
 		args,
 		operation,
 		&currentSystemMetrics,
@@ -84,6 +88,7 @@ func (d DefaultProducer) LogDebug(
 ) *Log {
 	return produceLog(
 		LevelDebug,
+		TypeNormal,
 		args,
 		operation,
 		&currentSystemMetrics,
@@ -100,6 +105,7 @@ func (d DefaultProducer) AuditAction(
 ) *Log {
 	return produceLog(
 		LevelInfo,
+		TypeAudit,
 		args.LogArgs,
 		operation,
 		nil,
@@ -116,6 +122,7 @@ func (d DefaultProducer) CaptureEvent(
 ) *Log {
 	return produceLog(
 		LevelInfo,
+		TypeEvent,
 		args.LogArgs,
 		operation,
 		nil,
@@ -145,7 +152,16 @@ func (d DefaultProducer) BeginOperation(
 
 	if parent != nil {
 		operation.ParentId = &parent.Id
-		operation.BaseOperationId = parent.BaseOperationId
+
+		if parent.BaseOperationId == nil {
+			operation.BaseOperationId = &parent.Id
+		} else {
+			operation.BaseOperationId = parent.BaseOperationId
+		}
+
+		if args.Actor == nil {
+			operation.Actor = parent.Actor
+		}
 	} else {
 		operation.Context = context
 	}
@@ -179,6 +195,7 @@ func (d DefaultProducer) EndOperation(
 
 func produceLog(
 	logLevel Level,
+	logType Type,
 	logArgs LogArgs,
 	operation *Operation,
 	currentSystemMetrics *SystemMetrics,
@@ -192,6 +209,7 @@ func produceLog(
 	var log = logArgs.ToLog()
 
 	log.Level = logLevel
+	log.Type = logType
 
 	if currentSystemMetrics != nil {
 		log.SystemMetrics = *currentSystemMetrics
@@ -208,6 +226,10 @@ func produceLog(
 
 		if operation.BaseOperationId != nil {
 			log.TracingId = *operation.BaseOperationId
+		}
+
+		if logArgs.Actor == nil {
+			log.Actor = operation.Actor
 		}
 	}
 

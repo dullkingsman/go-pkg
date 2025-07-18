@@ -4,32 +4,13 @@ import (
 	"encoding/json"
 	"github.com/dullkingsman/go-pkg/utils"
 	"os"
-	"strconv"
 )
 
 type DefaultWriter struct{ Writer }
 
 func (d DefaultWriter) WriteOperationsToStdout(items []Operation, r *Roga) {
 	for _, item := range items {
-		var additional = ""
-
-		if item.Measurements != nil {
-			var prefix = "\n                    " + " " + utils.GetEquivalentWhiteSpace(item.Name)
-
-			var jsonBytes, err = json.MarshalIndent(item.Measurements, prefix, "    ")
-
-			if err != nil {
-				utils.LogError("roga:operation-writer(stdout)", "could not marshal additional values")
-			} else {
-				additional += prefix + utils.BeautifyIndentedJson(jsonBytes)
-			}
-		}
-
-		utils.LogInfo(item.Name, "finished in "+utils.GreyString(
-			strconv.FormatInt(item.EssentialMeasurements.EndTime.Sub(
-				item.EssentialMeasurements.StartTime,
-			).Milliseconds(), 10)+"ms"+additional,
-		))
+		utils.LogInfo(item.Name+"("+item.Id.String()+")", item.String(r))
 	}
 }
 
@@ -70,22 +51,28 @@ func (d DefaultWriter) WriteLogsToStdout(items []Log, r *Roga) {
 			continue
 		}
 
-		var operation = r.buffers.operations[item.OperationId]
+		var operation = r.buffers.operations.Read(item.OperationId.String())
+
+		var operationName = "root"
+
+		if operation != nil {
+			operationName = operation.Name
+		}
 
 		switch item.Level {
 		case LevelFatal:
-			utils.LogError(operation.Name, item.String())
+			utils.LogError(operationName, item.String(r))
 			os.Exit(1)
 		case LevelError:
-			utils.LogError(operation.Name, item.String())
+			utils.LogError(operationName, item.String(r))
 		case LevelWarn:
-			utils.LogWarn(operation.Name, item.String())
+			utils.LogWarn(operationName, item.String(r))
 		case LevelInfo:
-			utils.LogInfo(operation.Name, item.String())
+			utils.LogInfo(operationName, item.String(r))
 		case LevelDebug:
-			utils.LogDebug(operation.Name, item.String())
+			utils.LogDebug(operationName, item.String(r))
 		default:
-			utils.LogInfo(operation.Name, item.String())
+			utils.LogInfo(operationName, item.String(r))
 		}
 	}
 }

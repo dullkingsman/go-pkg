@@ -2,6 +2,7 @@ package roga
 
 import (
 	"github.com/dullkingsman/go-pkg/utils"
+	"github.com/google/uuid"
 	"os"
 	"testing"
 	"time"
@@ -48,7 +49,7 @@ func TestBasicLogging(t *testing.T) {
 	// Create log arguments
 	logArgs := LogArgs{
 		Message: "Test log message",
-		Actor:   actor,
+		Actor:   &actor,
 	}
 
 	// Test logging at different levels
@@ -63,14 +64,45 @@ func TestBasicLogging(t *testing.T) {
 	r.Stop(true)
 }
 
-// TestBasicLogging tests basic logging functionality
+// TestPerformanceLogging tests basic logging functionality
+func TestPerformanceLogging(t *testing.T) {
+	// Initialize Roga
+	r := Init()
+	r.Start()
+
+	// Create a simple actor for our logs
+	actor := Actor{
+		Type: ActorTypeSystem,
+	}
+
+	// Create log arguments
+	logArgs := LogArgs{
+		Message: "Test log message",
+		Actor:   &actor,
+	}
+
+	// Test logging at different levels
+	// We're just testing that these don't panic
+	for i := 0; i < 100_000; i++ {
+		r.LogInfo(logArgs)
+	}
+	// We don't test Fatal as it would exit the program
+
+	//time.Sleep(10 * time.Second)
+
+	// Clean up
+	r.Stop(true)
+}
+
+// TestBasicOperationLogging tests basic logging functionality
 func TestBasicOperationLogging(t *testing.T) {
 	// Create a temporary directory for logs
-	tempDir, err := os.MkdirTemp("", "roga_test")
+	var tempDir = "./roga_test/basic_operation_logging/"
+	err := os.MkdirAll(tempDir, os.ModePerm)
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	//defer os.RemoveAll(tempDir)
 
 	// Configure Roga to write to files
 	customConfig := Config{
@@ -85,8 +117,56 @@ func TestBasicOperationLogging(t *testing.T) {
 	r := Init(customConfig)
 	r.Start()
 
+	r.LogInfo(LogArgs{
+		Message: "Test in root log message",
+		Actor: &Actor{
+			Type: ActorTypeSystem,
+		},
+	})
+
 	op := r.BeginOperation(OperationArgs{
 		Name: "TestOperation",
+	})
+
+	op.LogInfo(LogArgs{
+		Message: "Test in nested op log message",
+		Actor: &Actor{
+			Type: ActorTypeSystem,
+		},
+	})
+
+	var op2 = r.BeginOperation(OperationArgs{
+		Name: "TestOperation2",
+		Actor: &Actor{
+			Type: ActorTypeUser,
+			User: &User{
+				Identifier:      uuid.New().String(),
+				Id:              utils.PtrOf(uuid.New().String()),
+				IdType:          utils.PtrOf("UUID"),
+				SessionId:       utils.PtrOf(uuid.New().String()),
+				SessionIdType:   utils.PtrOf("UUID"),
+				Role:            nil,
+				PermissionLevel: utils.PtrOf("BASIC"),
+				Type:            utils.PtrOf("CUSTOMER"),
+				PhoneNumber:     utils.PtrOf("+251960621337"),
+				Email:           utils.PtrOf("daniel@gebta.app"),
+			},
+		},
+	})
+
+	op2.AuditAction(AuditLogArgs{
+		LogArgs{
+			Event:   utils.PtrOf("Login"),
+			Outcome: utils.PtrOf("Succeeded"),
+			Message: "Successful login",
+		},
+	})
+
+	op.CaptureEvent(EventLogArgs{
+		LogArgs{
+			Event:   utils.PtrOf("SomethingHappened"),
+			Outcome: utils.PtrOf("Succeeded"),
+		},
 	})
 
 	if op == nil {
@@ -99,10 +179,9 @@ func TestBasicOperationLogging(t *testing.T) {
 
 	op.EndOperation()
 
-	//r.Stop(true)
-	r.Flush()
-
 	time.Sleep(2 * time.Second)
+
+	r.Stop(true)
 
 	// Verify operation was logged
 	var logsBaseDir = tempDir + getCurrentTimeRoundedTo(
@@ -127,7 +206,6 @@ func TestBasicOperationLogging(t *testing.T) {
 	if !foundOperationsFile {
 		t.Errorf("Expected to find operations file %s", DefaultOperationsFileName)
 	}
-	r.Stop(true)
 }
 
 // TestOperationManagement tests the creation and management of operations
@@ -144,7 +222,7 @@ func TestOperationManagement(t *testing.T) {
 	// Create operation arguments
 	opArgs := OperationArgs{
 		Name:  "TestOperation",
-		Actor: actor,
+		Actor: &actor,
 	}
 
 	// Begin an operation
@@ -158,15 +236,15 @@ func TestOperationManagement(t *testing.T) {
 
 	// Log within the operation
 	logArgs := LogArgs{
-		Message: "Test log within operation (outer)",
-		Actor:   actor,
+		Message: "Test log within operation",
+		Actor:   &actor,
 	}
 	op.LogInfo(logArgs)
 
 	// Create a nested operation
 	nestedOpArgs := OperationArgs{
 		Name:  "NestedOperation",
-		Actor: actor,
+		Actor: &actor,
 	}
 	nestedOp := op.BeginOperation(nestedOpArgs)
 	if nestedOp == nil {
@@ -179,11 +257,6 @@ func TestOperationManagement(t *testing.T) {
 		t.Errorf("Expected nested operation to have a parent ID")
 	}
 
-	logArgsInner := LogArgs{
-		Message: "Test log within operation(innter)",
-		Actor:   actor,
-	}
-	nestedOp.LogInfo(logArgsInner)
 	// End the nested operation
 	nestedOp.EndOperation()
 
@@ -254,13 +327,13 @@ func TestFileWriting(t *testing.T) {
 	// Create and log some test data
 	logArgs := LogArgs{
 		Message: "Test file writing",
-		Actor:   actor,
+		Actor:   &actor,
 	}
 	r.LogInfo(logArgs)
 
 	opArgs := OperationArgs{
 		Name:  "TestFileOperation",
-		Actor: actor,
+		Actor: &actor,
 	}
 	op := r.BeginOperation(opArgs)
 	op.EndOperation()

@@ -37,21 +37,32 @@ func Init(config ...Config) Roga {
 		if __config.Writer != nil {
 			_config.Writer = __config.Writer
 		}
+
+		if __config.StdoutLogFormatter != nil {
+			_config.StdoutLogFormatter = __config.StdoutLogFormatter
+		}
+
+		if __config.StdoutOperationFormatter != nil {
+			_config.StdoutOperationFormatter = __config.StdoutOperationFormatter
+		}
 	}
 
 	var instanceConfig = _config.Instance.Inner()
 
 	var instance = Roga{
-		context:         defaultOperationContext,
-		config:          instanceConfig,
-		metricsLock:     &sync.RWMutex{},
-		lastWriteLock:   &sync.RWMutex{},
-		consumptionSync: &sync.WaitGroup{},
-		started:         false,
-		producer:        _config.Producer,
-		monitor:         _config.Monitor,
-		dispatcher:      _config.Dispatcher,
-		writer:          _config.Writer,
+		context:                  defaultOperationContext,
+		config:                   instanceConfig,
+		metricsLock:              &sync.RWMutex{},
+		lastWriteLock:            &sync.RWMutex{},
+		consumptionSync:          &sync.WaitGroup{},
+		writeSync:                &sync.WaitGroup{},
+		started:                  false,
+		stdoutLogFormatter:       _config.StdoutLogFormatter,
+		stdoutOperationFormatter: _config.StdoutOperationFormatter,
+		producer:                 _config.Producer,
+		monitor:                  _config.Monitor,
+		dispatcher:               _config.Dispatcher,
+		writer:                   _config.Writer,
 		rootOperation: Operation{
 			Id:          uuid.New(),
 			Name:        "root",
@@ -72,14 +83,20 @@ func Init(config ...Config) Roga {
 			resume: make(chan bool, 1),
 		},
 		buffers: buffers{
-			operations: make(map[uuid.UUID]Operation),
-			logs:       make(map[uuid.UUID]Log),
+			operations: buffer[string, Operation]{
+				collection: make(map[string]Operation),
+				lock:       &sync.RWMutex{},
+			},
+			logs: buffer[uuid.UUID, Log]{
+				collection: make(map[uuid.UUID]Log),
+				lock:       &sync.RWMutex{},
+			},
 		},
 		channels: channels{
 			operational: channelGroup{
 				production: make(chan Writable, instanceConfig.maxProductionChannelItems),
 				queue: queueChannels{
-					operation: make(chan uuid.UUID, instanceConfig.maxOperationQueueSize),
+					operation: make(chan string, instanceConfig.maxOperationQueueSize),
 					log:       make(chan uuid.UUID, instanceConfig.maxLogQueueSize),
 				},
 				writing: writingChannels{
@@ -136,40 +153,70 @@ func Init(config ...Config) Roga {
 	return instance
 }
 
-func (r *Roga) StopSystemMonitoring() {
+func (r *Roga) StopSystemMonitoring(wg ...*sync.WaitGroup) {
+	if len(wg) > 0 && wg[0] != nil {
+		wg[0].Add(1)
+		defer wg[0].Done()
+	}
+
 	r.ResumeSystemMonitoring()
 	r.metricMonitorControls.stop <- true
 
 	utils.LogInfo("roga:cleanup", "stopped system monitoring")
 }
 
-func (r *Roga) PauseSystemMonitoring() {
+func (r *Roga) PauseSystemMonitoring(wg ...*sync.WaitGroup) {
+	if len(wg) > 0 && wg[0] != nil {
+		wg[0].Add(1)
+		defer wg[0].Done()
+	}
+
 	r.metricMonitorControls.pause <- true
 
 	utils.LogInfo("roga:cleanup", "paused system monitoring")
 }
 
-func (r *Roga) ResumeSystemMonitoring() {
+func (r *Roga) ResumeSystemMonitoring(wg ...*sync.WaitGroup) {
+	if len(wg) > 0 && wg[0] != nil {
+		wg[0].Add(1)
+		defer wg[0].Done()
+	}
+
 	r.metricMonitorControls.resume <- true
 
 	utils.LogInfo("roga:cleanup", "resumed system monitoring")
 }
 
-func (r *Roga) StopIdleChannelMonitoring() {
-	r.ResumeIdleChannelMonitoring()
+func (r *Roga) StopIdleChannelMonitoring(wg ...*sync.WaitGroup) {
+	if len(wg) > 0 && wg[0] != nil {
+		wg[0].Add(1)
+		defer wg[0].Done()
+	}
+
+	r.ResumeIdleChannelMonitoring(wg...)
 
 	r.idleChannelMonitorControls.stop <- true
 
 	utils.LogInfo("roga:cleanup", "stopped idle channel monitoring")
 }
 
-func (r *Roga) PauseIdleChannelMonitoring() {
+func (r *Roga) PauseIdleChannelMonitoring(wg ...*sync.WaitGroup) {
+	if len(wg) > 0 && wg[0] != nil {
+		wg[0].Add(1)
+		defer wg[0].Done()
+	}
+
 	r.idleChannelMonitorControls.pause <- true
 
 	utils.LogInfo("roga:cleanup", "paused idle channel monitoring")
 }
 
-func (r *Roga) ResumeIdleChannelMonitoring() {
+func (r *Roga) ResumeIdleChannelMonitoring(wg ...*sync.WaitGroup) {
+	if len(wg) > 0 && wg[0] != nil {
+		wg[0].Add(1)
+		defer wg[0].Done()
+	}
+
 	r.idleChannelMonitorControls.resume <- true
 
 	utils.LogInfo("roga:cleanup", "resumed idle channel monitoring")
@@ -179,6 +226,8 @@ func (r *Roga) Start() {
 	if !r.started {
 		r.started = true
 
+		addWritableToQueue(r.rootOperation, r)
+
 		r.startingMonitoring()
 
 		r.startConsuming()
@@ -187,7 +236,12 @@ func (r *Roga) Start() {
 	utils.LogInfo("roga:startup", "started")
 }
 
-func (r *Roga) Flush() {
+func (r *Roga) Flush(wg ...*sync.WaitGroup) {
+	if len(wg) > 0 && wg[0] != nil {
+		wg[0].Add(1)
+		defer wg[0].Done()
+	}
+
 	r.channels.flush.writing.stdout <- true
 	r.channels.flush.writing.file <- true
 	r.channels.flush.writing.external <- true
@@ -204,7 +258,12 @@ func (r *Roga) Flush() {
 	utils.LogInfo("roga:cleanup:consumption", "flushed production")
 }
 
-func (r *Roga) StopConsuming() {
+func (r *Roga) StopConsuming(wg ...*sync.WaitGroup) {
+	if len(wg) > 0 && wg[0] != nil {
+		wg[0].Add(1)
+		defer wg[0].Done()
+	}
+
 	r.channels.stop.production <- true
 
 	utils.LogInfo("roga:cleanup:consumption", "stopped consuming production")
@@ -222,6 +281,8 @@ func (r *Roga) StopConsuming() {
 }
 
 func (r *Roga) Stop(flush ...bool) {
+	r.rootOperation.EndOperation()
+
 	if len(flush) > 0 && flush[0] {
 		r.Flush()
 	}
@@ -232,19 +293,20 @@ func (r *Roga) Stop(flush ...bool) {
 
 	r.StopConsuming()
 
+	r.Wait()
+
 	utils.LogInfo("roga:cleanup", "stopped")
 }
 
 func (r *Roga) Recover() {
-	r.Stop()
-
-	r.Wait()
-
+	// TODO implement a check to see what system interruptions or crashes are causing the process to exist and flush gracefully stop
+	r.Stop(true)
 	utils.LogInfo("roga:signal-handler", "flushed everything")
 }
 
 func (r *Roga) Wait() {
 	r.consumptionSync.Wait()
+	r.writeSync.Wait()
 }
 
 func (r *Roga) LogFatal(args LogArgs) {
@@ -517,7 +579,7 @@ func (r *Roga) consumeProductionChannel() {
 	var stopped = false
 
 	for {
-		time.Sleep(100 * time.Millisecond)
+		// time.Sleep(100 * time.Millisecond)
 		if stopped {
 			for {
 				select {
@@ -577,7 +639,7 @@ func (r *Roga) consumeOperationQueue() {
 	var stopped = false
 
 	for {
-		time.Sleep(100 * time.Millisecond)
+		//time.Sleep(100 * time.Millisecond)
 		var operations []Operation
 
 		if stopped {
@@ -585,13 +647,13 @@ func (r *Roga) consumeOperationQueue() {
 			for {
 				select {
 				case operationId := <-r.channels.operational.queue.operation:
-					var operation, ok = r.buffers.operations[operationId]
+					var operation = r.buffers.operations.Read(operationId)
 
-					if !ok {
+					if operation == nil {
 						continue
 					}
 
-					operations = append(operations, operation)
+					operations = append(operations, *operation)
 				default:
 					var stop = len(r.channels.operational.production) == 0
 
@@ -628,13 +690,13 @@ func (r *Roga) consumeOperationQueue() {
 			for {
 				select {
 				case operationId := <-r.channels.operational.queue.operation:
-					var operation, ok = r.buffers.operations[operationId]
+					var operation = r.buffers.operations.Read(operationId)
 
-					if !ok {
+					if operation == nil {
 						continue
 					}
 
-					operations = append(operations, operation)
+					operations = append(operations, *operation)
 				default:
 					r.channels.flush.writing.stdout <- true
 					r.channels.flush.writing.file <- true
@@ -653,13 +715,13 @@ func (r *Roga) consumeOperationQueue() {
 			for i := 0; i < r.config.maxOperationQueueSize; i++ {
 				var operationId = <-r.channels.operational.queue.operation
 
-				var operation, ok = r.buffers.operations[operationId]
+				var operation = r.buffers.operations.Read(operationId)
 
-				if !ok {
+				if operation == nil {
 					continue
 				}
 
-				operations[i] = operation
+				operations[i] = *operation
 			}
 		}
 
@@ -677,7 +739,7 @@ func (r *Roga) consumeLogQueue() {
 	var stopped = false
 
 	for {
-		time.Sleep(100 * time.Millisecond)
+		// time.Sleep(100 * time.Millisecond)
 		var logs []Log
 
 		if stopped {
@@ -685,13 +747,13 @@ func (r *Roga) consumeLogQueue() {
 			for {
 				select {
 				case logId := <-r.channels.operational.queue.log:
-					var log, ok = r.buffers.logs[logId]
+					var log = r.buffers.logs.Read(logId)
 
-					if !ok {
+					if log == nil {
 						continue
 					}
 
-					logs = append(logs, log)
+					logs = append(logs, *log)
 				default:
 					var stop = len(r.channels.operational.production) == 0
 
@@ -728,13 +790,13 @@ func (r *Roga) consumeLogQueue() {
 			for {
 				select {
 				case logId := <-r.channels.operational.queue.log:
-					var log, ok = r.buffers.logs[logId]
+					var log = r.buffers.logs.Read(logId)
 
-					if !ok {
+					if log == nil {
 						continue
 					}
 
-					logs = append(logs, log)
+					logs = append(logs, *log)
 				default:
 					r.channels.flush.writing.stdout <- true
 					r.channels.flush.writing.file <- true
@@ -753,13 +815,13 @@ func (r *Roga) consumeLogQueue() {
 			for i := 0; i < r.config.maxLogQueueSize; i++ {
 				var logId = <-r.channels.operational.queue.log
 
-				var log, ok = r.buffers.logs[logId]
+				var log = r.buffers.logs.Read(logId)
 
-				if !ok {
+				if log == nil {
 					continue
 				}
 
-				logs[i] = log
+				logs[i] = *log
 			}
 		}
 		r.dispatcher.DispatchLogs(logs, &r.channels.operational.writing)
@@ -776,8 +838,7 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup, index int) {
 	var stopped = false
 
 	for {
-		time.Sleep(100 * time.Millisecond)
-
+		// time.Sleep(100 * time.Millisecond)
 		var operations []Operation
 
 		var logs []Log
@@ -848,8 +909,7 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup, index int) {
 	var stopped = false
 
 	for {
-		time.Sleep(100 * time.Millisecond)
-
+		// time.Sleep(100 * time.Millisecond)
 		var operations []Operation
 
 		var logs []Log
@@ -920,8 +980,7 @@ func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup, index int) {
 	var stopped = false
 
 	for {
-		time.Sleep(100 * time.Millisecond)
-
+		// time.Sleep(100 * time.Millisecond)
 		var operations []Operation
 
 		var logs []Log

@@ -488,7 +488,7 @@ func getStackFrames(framesToSkip int) []StackFrame {
 func (a LogArgs) ToLog() Log {
 	var log = Log{
 		Message: a.Message,
-		Actor:   a.Actor,
+		Actor:   utils.ValueOr(a.Actor, Actor{}),
 		Data:    a.Data,
 		Event:   a.Event,
 		Outcome: a.Outcome,
@@ -509,7 +509,7 @@ func (a OperationArgs) ToOperation() Operation {
 	return Operation{
 		Name:        a.Name,
 		Description: a.Description,
-		Actor:       a.Actor,
+		Actor:       utils.ValueOr(a.Actor, Actor{}),
 	}
 }
 
@@ -561,63 +561,59 @@ func getLogFileDescriptor(r *Roga, operations ...bool) (normal *os.File, audit *
 	)
 
 	if isOperations {
-		normalFilePath += r.config.operationsFileName
 		operationFilePath += r.config.operationsFileName
-		auditFilePath += "audit." + r.config.logsFileName
-		eventFilePath += "event." + r.config.logsFileName
+
+		operation, err = os.OpenFile(operationFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+
+		if err != nil || operation == nil {
+			if err == nil {
+				err = errors.New("could not open operation file " + utils.GreyString(operationFilePath))
+			}
+
+			utils.LogError("roga:operation-file-descriptor", err.Error())
+
+			return
+		}
 	} else {
 		normalFilePath += "normal." + r.config.logsFileName
 		auditFilePath += "audit." + r.config.logsFileName
 		eventFilePath += "event." + r.config.logsFileName
-		operationFilePath += r.config.operationsFileName
-	}
 
-	normal, err = os.OpenFile(normalFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		normal, err = os.OpenFile(normalFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
-	if err != nil || normal == nil {
-		if err == nil {
-			err = errors.New("could not open normal file " + utils.GreyString(normalFilePath))
+		if err != nil || normal == nil {
+			if err == nil {
+				err = errors.New("could not open normal file " + utils.GreyString(normalFilePath))
+			}
+
+			utils.LogError("roga:normal-file-descriptor", err.Error())
+
+			return
 		}
 
-		utils.LogError("roga:file-descriptor", err.Error())
+		audit, err = os.OpenFile(auditFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
-		return
-	}
+		if err != nil || audit == nil {
+			if err == nil {
+				err = errors.New("could not open audit file " + utils.GreyString(auditFilePath))
+			}
 
-	audit, err = os.OpenFile(auditFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			utils.LogError("roga:audit-file-descriptor", err.Error())
 
-	if err != nil || audit == nil {
-		if err == nil {
-			err = errors.New("could not open audit file " + utils.GreyString(auditFilePath))
+			return
 		}
 
-		utils.LogError("roga:file-descriptor", err.Error())
+		event, err = os.OpenFile(eventFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
-		return
-	}
+		if err != nil || event == nil {
+			if err == nil {
+				err = errors.New("could not open event file " + utils.GreyString(eventFilePath))
+			}
 
-	event, err = os.OpenFile(eventFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			utils.LogError("roga:event-file-descriptor", err.Error())
 
-	if err != nil || event == nil {
-		if err == nil {
-			err = errors.New("could not open event file " + utils.GreyString(eventFilePath))
+			return
 		}
-
-		utils.LogError("roga:file-descriptor", err.Error())
-
-		return
-	}
-
-	operation, err = os.OpenFile(operationFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-
-	if err != nil || operation == nil {
-		if err == nil {
-			err = errors.New("could not open operations file " + utils.GreyString(operationFilePath))
-		}
-
-		utils.LogError("roga:file-descriptor", err.Error())
-
-		return
 	}
 
 	cleanupFunc = func(file *os.File) {
@@ -633,13 +629,26 @@ func getLogFileDescriptor(r *Roga, operations ...bool) (normal *os.File, audit *
 
 func addWritableToQueue(writable Writable, r *Roga) {
 	if operation, ok := writable.(Operation); ok {
-		if _, exists := r.buffers.operations[operation.Id]; !exists {
-			r.buffers.operations[operation.Id] = operation
-			r.channels.operational.queue.operation <- operation.Id
+		var idSuffix = "-start"
+
+		if !operation.EssentialMeasurements.EndTime.IsZero() {
+			idSuffix = "-end"
 		}
-	} else if log, ok := writable.(Log); ok {
-		r.buffers.logs[log.Id] = log
-		r.channels.operational.queue.log <- log.Id
+
+		r.buffers.operations.Write(operation.Id.String()+idSuffix, operation)
+
+		r.channels.operational.queue.operation <- operation.Id.String() + idSuffix
+
+		return
+	}
+
+	if log, ok := writable.(Log); ok {
+		var item = r.buffers.logs.Read(log.Id)
+
+		if item == nil {
+			r.buffers.logs.Write(log.Id, log)
+			r.channels.operational.queue.log <- log.Id
+		}
 	}
 }
 
@@ -652,6 +661,9 @@ func collectWritable(writable Writable, operations *[]Operation, logs *[]Log) {
 }
 
 func writeToStream(stream string, operations *[]Operation, logs *[]Log, r *Roga) {
+	r.writeSync.Add(1)
+	defer r.writeSync.Done()
+
 	var hasOperations = len(*operations) > 0
 	var hasLogs = len(*logs) > 0
 
@@ -666,12 +678,12 @@ func writeToStream(stream string, operations *[]Operation, logs *[]Log, r *Roga)
 		}
 	case "file":
 		if hasOperations {
-			var _, _, _, file, cleanupFunc, err = getLogFileDescriptor(r, true)
+			var _, _, _, operation, cleanupFunc, err = getLogFileDescriptor(r, true)
 
 			if err == nil {
-				r.writer.WriteOperationsToFile(*operations, file, r)
+				r.writer.WriteOperationsToFile(*operations, operation, r)
 
-				cleanupFunc(file)
+				cleanupFunc(operation)
 			}
 		}
 
@@ -697,10 +709,21 @@ func writeToStream(stream string, operations *[]Operation, logs *[]Log, r *Roga)
 	}
 
 	if hasOperations {
+		for _, operation := range *operations {
+			if !operation.EssentialMeasurements.EndTime.IsZero() {
+				r.buffers.operations.Remove(operation.Id.String() + "-start")
+				r.buffers.operations.Remove(operation.Id.String() + "-end")
+			}
+		}
+
 		*operations = make([]Operation, 0)
 	}
 
 	if hasLogs {
+		for _, log := range *logs {
+			r.buffers.logs.Remove(log.Id)
+		}
+
 		*logs = make([]Log, 0)
 	}
 
@@ -709,6 +732,60 @@ func writeToStream(stream string, operations *[]Operation, logs *[]Log, r *Roga)
 	r.lastWrite = time.Now().UTC()
 
 	r.lastWriteLock.Unlock()
+}
+
+func (b *buffer[T, H]) Read(key T) *H {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+
+	if b.collection == nil {
+		return nil
+	}
+
+	if val, ok := b.collection[key]; ok {
+		return &val
+	}
+
+	return nil
+}
+
+func (b *buffer[T, H]) ReadAll() []H {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+
+	if b.collection == nil {
+		return nil
+	}
+
+	var values []H
+
+	for _, val := range b.collection {
+		values = append(values, val)
+	}
+
+	return values
+}
+
+func (b *buffer[T, H]) Write(key T, value H) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
+	if b.collection == nil {
+		b.collection = make(map[T]H)
+	}
+
+	b.collection[key] = value
+}
+
+func (b *buffer[T, H]) Remove(key T) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
+	if b.collection == nil {
+		b.collection = make(map[T]H)
+	}
+
+	delete(b.collection, key)
 }
 
 func (oic *OuterInstanceConfig) FromOuter() *OuterInstanceConfig {
@@ -823,4 +900,12 @@ func (ic InstanceConfig) Outer() OuterInstanceConfig {
 		operationsFileName:            &ic.operationsFileName,
 		logsFileName:                  &ic.logsFileName,
 	}
+}
+
+func (l Log) String(r *Roga) string {
+	return r.stdoutLogFormatter.Format(l)
+}
+
+func (o Operation) String(r *Roga) string {
+	return r.stdoutOperationFormatter.Format(o)
 }
