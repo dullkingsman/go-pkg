@@ -3,3 +3,5 @@ github.com/dullkingsman/go-pkg/utils v0.0.3-alpha-1 h1:qLYce/KJzKOlAM/AvQ2TqtVQF
 github.com/dullkingsman/go-pkg/utils v0.0.3-alpha-1/go.mod h1:tGmiK1/oXjsWjCkuuPgLOqyEQ184Z159J7mJIJ7+UeI=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+go.mongodb.org/mongo-driver v1.17.4 h1:jUorfmVzljjr0FLzYQsGP8cgN/qzzxlY9Vh0C9KFXVw=
+go.mongodb.org/mongo-driver v1.17.4/go.mod h1:Hy04i7O2kC4RS06ZrhPRqj/u4DTYkFDAAccj+rVKqgQ=

@@ -14,6 +14,7 @@ func Init(config ...Config) Roga {
 	}
 
 	var _config = defaultRogaConfig
+	var instanceConfig = _config.Instance.Inner()
 
 	if len(config) > 0 {
 		var __config = config[0]
@@ -45,9 +46,13 @@ func Init(config ...Config) Roga {
 		if __config.StdoutOperationFormatter != nil {
 			_config.StdoutOperationFormatter = __config.StdoutOperationFormatter
 		}
-	}
 
-	var instanceConfig = _config.Instance.Inner()
+		if __config.FileFormat != nil {
+			if *__config.FileFormat == "text" {
+				instanceConfig.logsFormat = ".jsonl"
+			}
+		}
+	}
 
 	var instance = Roga{
 		context:                  defaultOperationContext,
@@ -293,6 +298,7 @@ func (r *Roga) Stop(flush ...bool) {
 
 	r.StopConsuming()
 
+	// check the weight group size
 	r.Wait()
 
 	utils.LogInfo("roga:cleanup", "stopped")
@@ -755,7 +761,7 @@ func (r *Roga) consumeLogQueue() {
 
 					logs = append(logs, *log)
 				default:
-					var stop = len(r.channels.operational.production) == 0
+					var stop = len(r.channels.operational.production) == 0 && len(r.channels.operational.queue.log) == 0
 
 					//r.channels.stop.writing.stdout <- true
 					//r.channels.stop.writing.file <- true
@@ -824,6 +830,7 @@ func (r *Roga) consumeLogQueue() {
 				logs[i] = *log
 			}
 		}
+
 		r.dispatcher.DispatchLogs(logs, &r.channels.operational.writing)
 		logs = make([]Log, 0)
 	}
@@ -850,7 +857,10 @@ func (r *Roga) consumeStdoutWrites(wg *sync.WaitGroup, index int) {
 				case writable := <-r.channels.operational.writing.stdout:
 					collectWritable(writable, &operations, &logs)
 				default:
-					var stop = len(r.channels.operational.queue.log) == 0 && len(r.channels.operational.queue.operation) == 0
+					var stop = len(r.channels.operational.queue.log) == 0 &&
+						len(r.channels.operational.queue.operation) == 0 &&
+						len(r.channels.operational.production) == 0 &&
+						len(r.channels.operational.writing.stdout) == 0
 
 					if stop {
 						close(r.channels.operational.writing.stdout)
@@ -921,7 +931,10 @@ func (r *Roga) consumeFileWrites(wg *sync.WaitGroup, index int) {
 				case writable := <-r.channels.operational.writing.file:
 					collectWritable(writable, &operations, &logs)
 				default:
-					var stop = len(r.channels.operational.queue.log) == 0 && len(r.channels.operational.queue.operation) == 0
+					var stop = len(r.channels.operational.queue.log) == 0 &&
+						len(r.channels.operational.queue.operation) == 0 &&
+						len(r.channels.operational.production) == 0 &&
+						len(r.channels.operational.writing.file) == 0
 
 					if stop {
 						close(r.channels.operational.writing.file)
@@ -992,7 +1005,9 @@ func (r *Roga) consumeExternalWrites(wg *sync.WaitGroup, index int) {
 				case writable := <-r.channels.operational.writing.external:
 					collectWritable(writable, &operations, &logs)
 				default:
-					var stop = len(r.channels.operational.queue.log) == 0 && len(r.channels.operational.queue.operation) == 0
+					var stop = len(r.channels.operational.queue.log) == 0 &&
+						len(r.channels.operational.queue.operation) == 0 &&
+						len(r.channels.operational.production) == 0
 
 					if stop {
 						close(r.channels.operational.writing.external)
