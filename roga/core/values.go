@@ -54,16 +54,19 @@ const (
 	DefaultWriteToFile     = true
 	DefaultWriteToExternal = true
 
-	DefaultOperationsFileName = "operations.jsonl"
-	DefaultLogsFileName       = "logs.jsonl"
+	DefaultOperationsFileName               = "operations"
+	DefaultLogsFileName                     = "logs"
+	DefaultLogsFormat                       = ".bson"
+	CloudProviderUnknown      CloudProvider = 0
+	CloudProviderAWS          CloudProvider = 1
+	CloudProviderGCP          CloudProvider = 2
+	CloudProviderAzure        CloudProvider = 3
+	CloudProviderVmware       CloudProvider = 5
+	CloudProviderVirtualBox   CloudProvider = 6
+	CloudProviderKvmQemu      CloudProvider = 7
 
-	CloudProviderUnknown    CloudProvider = 0
-	CloudProviderAWS        CloudProvider = 1
-	CloudProviderGCP        CloudProvider = 2
-	CloudProviderAzure      CloudProvider = 3
-	CloudProviderVmware     CloudProvider = 5
-	CloudProviderVirtualBox CloudProvider = 6
-	CloudProviderKvmQemu    CloudProvider = 7
+	FileTypeBinary Type = 0
+	FileTypeText   Type = 1
 )
 
 var (
@@ -93,6 +96,7 @@ var (
 		Monitor:                  &DefaultMonitor{},
 		Dispatcher:               &DefaultDispatcher{},
 		Writer:                   &DefaultWriter{},
+		FileFormat:               utils.PtrOf("binary"),
 	}
 
 	defaultInstanceConfig = InstanceConfig{
@@ -115,5 +119,6 @@ var (
 		fileLogsDirectoryFormatLayout: DefaultFileLogsDirectoryFormatLayout,
 		operationsFileName:            DefaultOperationsFileName,
 		logsFileName:                  DefaultLogsFileName,
+		logsFormat:                    DefaultLogsFormat,
 	}
 )

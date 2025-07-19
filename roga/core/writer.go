@@ -1,8 +1,10 @@
 package roga
 
 import (
+	"bufio"
 	"encoding/json"
 	"github.com/dullkingsman/go-pkg/utils"
+	"go.mongodb.org/mongo-driver/bson"
 	"os"
 )
 
@@ -15,30 +17,54 @@ func (d DefaultWriter) WriteOperationsToStdout(items []Operation, r *Roga) {
 }
 
 func (d DefaultWriter) WriteOperationsToFile(items []Operation, file *os.File, r *Roga) {
-	var jsonItems []byte
 
-	for _, item := range items {
-		var jsonBytes, err = json.Marshal(item)
+	var instanceConfig = defaultRogaConfig.Instance.Inner()
+	if instanceConfig.logsFormat == ".bson" {
+		operationWriter := bufio.NewWriter(file)
 
-		if err != nil {
-			utils.LogError("roga:operation-writer(file)", "could not marshal operation "+utils.GreyString(item.Id.String()))
-			continue
+		defer operationWriter.Flush()
+
+		var itemsWritten int
+		for _, item := range items {
+			bsonByte, err := bson.Marshal(item)
+			if err != nil {
+				utils.LogError("roga:operation-writer(file)", "could not marshal operation "+utils.GreyString(item.Id.String()))
+				continue
+			}
+
+			_, writeErr := operationWriter.Write(bsonByte)
+			if writeErr != nil {
+				utils.LogError("roga:log-writer(file)", "could not write log to buffer: "+writeErr.Error())
+				continue
+			}
+			itemsWritten++
+		}
+	} else {
+		var jsonItems []byte
+
+		for _, item := range items {
+			var jsonBytes, err = json.Marshal(item)
+
+			if err != nil {
+				utils.LogError("roga:operation-writer(file)", "could not marshal operation "+utils.GreyString(item.Id.String()))
+				continue
+			}
+
+			jsonItems = append(jsonItems, '\n')
+			jsonItems = append(jsonItems, jsonBytes...)
 		}
 
-		jsonItems = append(jsonItems, '\n')
-		jsonItems = append(jsonItems, jsonBytes...)
+		if len(jsonItems) == 0 {
+			return
+		}
+
+		var _, err = file.Write(jsonItems)
+
+		if err != nil {
+			utils.LogError("roga:operation-writer(file)", "could not write operations to file: "+err.Error())
+		}
+
 	}
-
-	if len(jsonItems) == 0 {
-		return
-	}
-
-	var _, err = file.Write(jsonItems)
-
-	if err != nil {
-		utils.LogError("roga:operation-writer(file)", "could not write operations to file: "+err.Error())
-	}
-
 }
 
 func (d DefaultWriter) WriteOperationsToExternal(items []Operation, r *Roga) {
@@ -47,10 +73,6 @@ func (d DefaultWriter) WriteOperationsToExternal(items []Operation, r *Roga) {
 
 func (d DefaultWriter) WriteLogsToStdout(items []Log, r *Roga) {
 	for _, item := range items {
-		if item.Type != 0 {
-			continue
-		}
-
 		var operation = r.buffers.operations.Read(item.OperationId.String())
 
 		var operationName = "root"
@@ -78,56 +100,96 @@ func (d DefaultWriter) WriteLogsToStdout(items []Log, r *Roga) {
 }
 
 func (d DefaultWriter) WriteLogsToFile(items []Log, normal *os.File, audit *os.File, event *os.File, r *Roga) {
-	var jsonNormalItems []byte
-	var jsonAuditItems []byte
-	var jsonEventItems []byte
 
-	for _, item := range items {
-		var jsonBytes, err = json.Marshal(item)
+	var instanceConfig = defaultRogaConfig.Instance.Inner()
+	if instanceConfig.logsFormat == ".bson" {
 
-		if err != nil {
-			utils.LogError("roga:log-writer(file)", "could not marshal log "+utils.GreyString(item.Id.String()))
-			continue
+		normalWriter := bufio.NewWriter(normal)
+		auditWriter := bufio.NewWriter(audit)
+		eventWriter := bufio.NewWriter(event)
+
+		// Ensure all buffered data is written to the files before the function exits.
+		defer normalWriter.Flush()
+		defer auditWriter.Flush()
+		defer eventWriter.Flush()
+
+		var itemsWritten int
+		for _, item := range items {
+
+			bsonBytes, err := bson.Marshal(item)
+			if err != nil {
+				utils.LogError("roga:log-writer(file)", "could not marshal log "+utils.GreyString(item.Id.String()))
+				continue
+			}
+			var writeErr error
+			switch item.Type {
+			case TypeNormal:
+				_, writeErr = normalWriter.Write(bsonBytes)
+			case TypeAudit:
+				_, writeErr = auditWriter.Write(bsonBytes)
+			case TypeEvent:
+				_, writeErr = eventWriter.Write(bsonBytes)
+			}
+			if writeErr != nil {
+				utils.LogError("roga:log-writer(file)", "could not write log to buffer: "+writeErr.Error())
+				continue
+			}
+			itemsWritten++
+
 		}
 
-		switch item.Type {
-		case TypeNormal:
-			jsonNormalItems = append(jsonNormalItems, '\n')
-			jsonNormalItems = append(jsonNormalItems, jsonBytes...)
-		case TypeAudit:
-			jsonAuditItems = append(jsonAuditItems, '\n')
-			jsonAuditItems = append(jsonAuditItems, jsonBytes...)
-		case TypeEvent:
-			jsonEventItems = append(jsonEventItems, '\n')
-			jsonEventItems = append(jsonEventItems, jsonBytes...)
+	} else {
+		var jsonNormalItems []byte
+		var jsonAuditItems []byte
+		var jsonEventItems []byte
+
+		for _, item := range items {
+			var jsonBytes, err = json.Marshal(item)
+
+			if err != nil {
+				utils.LogError("roga:log-writer(file)", "could not marshal log "+utils.GreyString(item.Id.String()))
+				continue
+			}
+
+			switch item.Type {
+			case TypeNormal:
+				jsonNormalItems = append(jsonNormalItems, '\n')
+				jsonNormalItems = append(jsonNormalItems, jsonBytes...)
+			case TypeAudit:
+				jsonAuditItems = append(jsonAuditItems, '\n')
+				jsonAuditItems = append(jsonAuditItems, jsonBytes...)
+			case TypeEvent:
+				jsonEventItems = append(jsonEventItems, '\n')
+				jsonEventItems = append(jsonEventItems, jsonBytes...)
+			}
 		}
-	}
 
-	if len(jsonNormalItems) == 0 && len(jsonAuditItems) == 0 && len(jsonEventItems) == 0 {
-		return
-	}
-
-	if len(jsonNormalItems) > 0 {
-		var _, err = normal.Write(jsonNormalItems)
-
-		if err != nil {
-			utils.LogError("roga:log-writer(file)", "could not write normal logs to file: "+err.Error())
+		if len(jsonNormalItems) == 0 && len(jsonAuditItems) == 0 && len(jsonEventItems) == 0 {
+			return
 		}
-	}
 
-	if len(jsonAuditItems) > 0 {
-		var _, err = audit.Write(jsonAuditItems)
+		if len(jsonNormalItems) > 0 {
+			var _, err = normal.Write(jsonNormalItems)
 
-		if err != nil {
-			utils.LogError("roga:log-writer(file)", "could not write audit logs to file: "+err.Error())
+			if err != nil {
+				utils.LogError("roga:log-writer(file)", "could not write normal logs to file: "+err.Error())
+			}
 		}
-	}
 
-	if len(jsonEventItems) > 0 {
-		var _, err = event.Write(jsonEventItems)
+		if len(jsonAuditItems) > 0 {
+			var _, err = audit.Write(jsonAuditItems)
 
-		if err != nil {
-			utils.LogError("roga:log-writer(file)", "could not write event logs to file: "+err.Error())
+			if err != nil {
+				utils.LogError("roga:log-writer(file)", "could not write audit logs to file: "+err.Error())
+			}
+		}
+
+		if len(jsonEventItems) > 0 {
+			var _, err = event.Write(jsonEventItems)
+
+			if err != nil {
+				utils.LogError("roga:log-writer(file)", "could not write event logs to file: "+err.Error())
+			}
 		}
 	}
 }

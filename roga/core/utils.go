@@ -534,6 +534,7 @@ func getCurrentTimeRoundedTo(interval time.Duration) time.Time {
 
 // getLogFileDescriptor returns a file descriptor for the given file name in the log base directory
 func getLogFileDescriptor(r *Roga, operations ...bool) (normal *os.File, audit *os.File, event *os.File, operation *os.File, cleanupFunc func(file *os.File), err error) {
+
 	var isOperations = false
 
 	if len(operations) > 0 {
@@ -561,7 +562,7 @@ func getLogFileDescriptor(r *Roga, operations ...bool) (normal *os.File, audit *
 	)
 
 	if isOperations {
-		operationFilePath += r.config.operationsFileName
+		operationFilePath += r.config.operationsFileName + r.config.logsFormat
 
 		operation, err = os.OpenFile(operationFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
@@ -575,9 +576,9 @@ func getLogFileDescriptor(r *Roga, operations ...bool) (normal *os.File, audit *
 			return
 		}
 	} else {
-		normalFilePath += "normal." + r.config.logsFileName
-		auditFilePath += "audit." + r.config.logsFileName
-		eventFilePath += "event." + r.config.logsFileName
+		normalFilePath += "normal." + r.config.logsFileName + r.config.logsFormat
+		auditFilePath += "audit." + r.config.logsFileName + r.config.logsFormat
+		eventFilePath += "event." + r.config.logsFileName + r.config.logsFormat
 
 		normal, err = os.OpenFile(normalFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 

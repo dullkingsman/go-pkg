@@ -41,6 +41,7 @@ type (
 		Monitor                  Monitor
 		Dispatcher               Dispatcher
 		Writer                   Writer
+		FileFormat               *string
 	}
 
 	InstanceConfig struct {
@@ -63,6 +64,7 @@ type (
 		fileLogsDirectoryFormatLayout string // time format layout
 		operationsFileName            string
 		logsFileName                  string
+		logsFormat                    string
 	}
 
 	OuterInstanceConfig struct {
