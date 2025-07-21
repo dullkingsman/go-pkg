@@ -41,7 +41,11 @@ func NewQueue[T any](
 	}
 
 	go func() {
-		defer q.wg.Done()
+		if wg != nil {
+			defer wg.Done()
+		} else {
+			defer q.wg.Done()
+		}
 
 		q.consume(fn)
 	}()
