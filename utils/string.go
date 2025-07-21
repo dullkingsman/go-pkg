@@ -24,19 +24,19 @@ type jsonNode struct {
 }
 
 // colorJsonNode colors the given json node based on its type
-func colorJsonNode(node *jsonNode) {
+func colorJsonNode(node *jsonNode, disableColor ...bool) {
 	switch node.nodeType {
 	case "null":
-		node.value = MagentaString(node.value)
+		node.value = MagentaString(node.value, disableColor...)
 		break
 	case "boolean":
-		node.value = YellowString(node.value)
+		node.value = YellowString(node.value, disableColor...)
 		break
 	case "number":
-		node.value = LightBlueString(node.value)
+		node.value = LightBlueString(node.value, disableColor...)
 		break
 	case "string":
-		node.value = GreenString(node.value)
+		node.value = GreenString(node.value, disableColor...)
 		break
 	}
 }
@@ -48,7 +48,7 @@ func colorJsonNode(node *jsonNode) {
 //
 // Node: This function only supports prefix and indentation
 // strings that contain only spaces and tabs.
-func BeautifyIndentedJson(indentedJson []byte) string {
+func BeautifyIndentedJson(indentedJson []byte, disableColor ...bool) string {
 	var lines = strings.Split(string(indentedJson), "\n\n")
 
 	var accumulating = "structure"
@@ -145,7 +145,7 @@ func BeautifyIndentedJson(indentedJson []byte) string {
 		var acc = ""
 
 		for _, node := range nodes {
-			colorJsonNode(&node)
+			colorJsonNode(&node, disableColor...)
 			acc = acc + node.value
 		}
 

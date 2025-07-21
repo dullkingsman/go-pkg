@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"log"
 	"runtime/debug"
 )
@@ -73,9 +74,17 @@ func LogDebug(tag string, format string, v ...any) {
 	log.Printf(GreyString(tag)+" "+format+"\n", v...)
 }
 
+func FormatDebugLog(tag string, format string, disableColor bool, v ...any) string {
+	return fmt.Sprintf(GreyString(tag, disableColor)+" "+format+"\n", v...)
+}
+
 // LogFatal logs an error message and exits the program with exit code 1.
 func LogFatal(tag string, format string, v ...any) {
 	log.Fatalf(BrightRedString(tag)+" "+format+"\n", v...)
+}
+
+func FormatFatalLog(tag string, format string, disableColor bool, v ...any) string {
+	return fmt.Sprintf(BrightRedString(tag, disableColor)+" "+format+"\n", v...)
 }
 
 // LogPanic logs an error message and exits the program with panic.
@@ -83,9 +92,17 @@ func LogPanic(tag string, format string, v ...any) {
 	log.Panicf(BrightRedString(tag)+" "+format+"\n", v...)
 }
 
+func FormatPanicLog(tag string, format string, disableColor bool, v ...any) string {
+	return fmt.Sprintf(BrightRedString(tag, disableColor)+" "+format+"\n", v...)
+}
+
 // LogError logs an error message.
 func LogError(tag string, format string, v ...any) {
 	log.Printf(BrightRedString(tag)+" "+format+"\n", v...)
+}
+
+func FormatErrorLog(tag string, format string, disableColor bool, v ...any) string {
+	return fmt.Sprintf(BrightRedString(tag, disableColor)+" "+format+"\n", v...)
 }
 
 // LogErrorWithStack logs an error message with stack trace.
@@ -94,9 +111,17 @@ func LogErrorWithStack(tag string, format string, v ...any) {
 	log.Printf("%s", debug.Stack())
 }
 
+func FormatErrorLogWithStack(tag string, format string, disableColor bool, v ...any) string {
+	return fmt.Sprintf(BrightRedString(tag, disableColor)+" "+format+"\n", v...) + "\n" + fmt.Sprintf("%s", debug.Stack())
+}
+
 // LogInfo logs an info message.
 func LogInfo(tag string, format string, v ...any) {
 	log.Printf(LightBlueString(tag)+" "+format+"\n", v...)
+}
+
+func FormatInfoLog(tag string, format string, disableColor bool, v ...any) string {
+	return fmt.Sprintf(LightBlueString(tag, disableColor)+" "+format+"\n", v...)
 }
 
 // LogWarn logs a warning message.
@@ -104,7 +129,15 @@ func LogWarn(tag string, format string, v ...any) {
 	log.Printf(YellowString(tag)+" "+format+"\n", v...)
 }
 
+func FormatWarnLog(tag string, format string, disableColor bool, v ...any) string {
+	return fmt.Sprintf(YellowString(tag, disableColor)+" "+format+"\n", v...)
+}
+
 // LogSuccess logs a success message.
 func LogSuccess(tag string, format string, v ...any) {
 	log.Printf(GreenString(tag)+" "+format+"\n", v...)
+}
+
+func FormatSuccessLog(tag string, format string, disableColor bool, v ...any) string {
+	return fmt.Sprintf(GreenString(tag, disableColor)+" "+format+"\n", v...)
 }

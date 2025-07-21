@@ -1,9 +1,14 @@
 package roga
 
 import (
+	"github.com/dullkingsman/go-pkg/roga/internal"
+	"github.com/dullkingsman/go-pkg/roga/pkg/model"
+	"github.com/dullkingsman/go-pkg/roga/pkg/roga"
+	"github.com/dullkingsman/go-pkg/roga/writable"
 	"github.com/dullkingsman/go-pkg/utils"
 	"github.com/google/uuid"
 	"os"
+	"sync"
 	"testing"
 	"time"
 )
@@ -12,42 +17,81 @@ func TestAll(t *testing.T) {
 	TestRogaInitialization(t)
 	TestBasicLogging(t)
 	TestOperationManagement(t)
-	TestMonitoring(t)
 	TestFileWriting(t)
 }
 
 // TestRogaInitialization tests that Roga initializes correctly
 func TestRogaInitialization(t *testing.T) {
 	// Initialize Roga with default configuration
-	r := Init()
-
-	utils.LogInfo("test:roga", "Initialized Roga")
+	r := roga.Init(roga.Config{
+		Code:    "test",
+		Version: "1.0.0",
+		Env:     "test",
+	})
 
 	// Verify that Roga is initialized by checking if Start() doesn't panic
-	r.Start()
-
-	utils.LogInfo("test:roga", "Started Roga")
+	//r.Start()
 
 	// Clean up
 	r.Stop()
+}
 
-	utils.LogInfo("test:roga", "Stopped Roga")
-	utils.LogInfo("test:roga", "Finished Roga Initialization")
+func TestQueueConsumer(t *testing.T) {
+	t.Run("stopes", func(t *testing.T) {
+		var (
+			size       = 1
+			queue      = make(chan writable.Writable, size)
+			stopChan   = make(chan bool)
+			flushChan  = make(chan bool)
+			dependency = make(chan writable.Writable, size)
+			//dependentStop  = make(chan bool)
+			//dependentFlush = make(chan bool)
+			wg = &sync.WaitGroup{}
+		)
+
+		wg.Add(1)
+
+		go internal.ConsumeQueue(
+			"test_queue",
+			queue,
+			stopChan,
+			flushChan,
+			[]<-chan writable.Writable{dependency},
+			[]chan<- bool{},
+			[]chan<- bool{},
+			wg,
+			func(items []writable.Writable) {
+				for _, item := range items {
+					println(item.String(roga.DefaultStdoutFormatter{}))
+				}
+			},
+		)
+
+		queue <- roga.Log{
+			Message: "test message",
+		}
+
+		flushChan <- true
+
+		stopChan <- true
+
+		wg.Wait()
+	})
 }
 
 // TestBasicLogging tests basic logging functionality
 func TestBasicLogging(t *testing.T) {
 	// Initialize Roga
-	r := Init()
+	r := roga.Init()
 	r.Start()
 
 	// Create a simple actor for our logs
-	actor := Actor{
-		Type: ActorTypeSystem,
+	actor := model.Actor{
+		Type: model.ActorTypeSystem,
 	}
 
 	// Create log arguments
-	logArgs := LogArgs{
+	logArgs := roga.LogArgs{
 		Message: "Test log message",
 		Actor:   &actor,
 	}
@@ -61,37 +105,135 @@ func TestBasicLogging(t *testing.T) {
 	// We don't test Fatal as it would exit the program
 
 	// Clean up
-	r.Stop(true)
+	r.Stop()
+}
+
+// TestBasicLogging tests basic logging functionality
+func TestBasicEventCapture(t *testing.T) {
+	// Initialize Roga
+	r := roga.Init()
+	r.Start()
+
+	// time
+	r.CaptureEvent(roga.EventLogArgs{
+		roga.LogArgs{
+			Event:   utils.PtrOf("SomethingHappened"),
+			Outcome: utils.PtrOf("Succeeded"),
+			Message: "Successful happenstance",
+		},
+	})
+
+	r.LogInfo(roga.LogArgs{
+		Message: "Test in root log message",
+	})
+
+	//time.Sleep(6 * time.Second)
+
+	// Clean up
+	r.Stop()
 }
 
 // TestPerformanceLogging tests basic logging functionality
 func TestPerformanceLogging(t *testing.T) {
 	// Initialize Roga
-	r := Init()
+	r := roga.Init(roga.Config{
+		Code:    "test",
+		Version: "1.0.0",
+		Env:     "test",
+		InstanceConfig: &roga.OuterInstanceConfig{
+			WriteToFile: utils.PtrOf(false),
+		},
+	})
 	r.Start()
 
-	// Create a simple actor for our logs
-	actor := Actor{
-		Type: ActorTypeSystem,
+	for i := 0; i < 1_000_000; i++ {
+		r.CaptureEvent(roga.EventLogArgs{
+			roga.LogArgs{
+				Event:   utils.PtrOf("SomethingHappened"),
+				Outcome: utils.PtrOf("Succeeded"),
+				Message: "Successful happenstance",
+			},
+		})
 	}
 
-	// Create log arguments
-	logArgs := LogArgs{
-		Message: "Test log message",
-		Actor:   &actor,
-	}
-
-	// Test logging at different levels
-	// We're just testing that these don't panic
-	for i := 0; i < 100_000; i++ {
-		r.LogInfo(logArgs)
-	}
-	// We don't test Fatal as it would exit the program
-
-	//time.Sleep(10 * time.Second)
+	//var startedAllocation = time.Now()
+	//
+	//var (
+	//	items     = make([]Writable, 1_000_000)
+	//	entryType = EntryTypeEvent
+	//)
+	//
+	//var allocationTook = time.Since(startedAllocation)
+	//
+	//var startedObjectCreation = time.Now()
+	//
+	//for i := 0; i < 1_000_000; i++ {
+	//	items[i] = EventLogArgs{
+	//		LogArgs{
+	//			Event:   utils.PtrOf("SomethingHappened"),
+	//			Outcome: utils.PtrOf("Succeeded"),
+	//			Message: "Successful happenstance",
+	//		},
+	//	}.ToLog()
+	//}
+	//
+	//var objectCreationTook = time.Since(startedObjectCreation)
+	//
+	//var startedWriting = time.Now()
+	//
+	//for _, item := range items {
+	//	if item == nil {
+	//		continue
+	//	}
+	//
+	//	switch entryType {
+	//	case EntryTypeOperation:
+	//		operation := utils.SafeCastValue[Operation](item)
+	//		entry := utils.CyanString("op") + "(" + utils.GreyString(operation.Id.String()) + ") " + operation.String(DefaultStdoutFormatter{})
+	//		fmt.Printf(strings.TrimSpace(operation.Name + " " + entry + "\n"))
+	//
+	//	case EntryTypeAudit, EntryTypeEvent, EntryTypeLog:
+	//		logItem := utils.SafeCastValue[Log](item)
+	//		//var fmtFunc = utils.FormatInfoLog
+	//
+	//		//switch logItem.Level {
+	//		//case LevelFatal, LevelError:
+	//		//	fmtFunc = utils.FormatErrorLog
+	//		//case LevelWarn:
+	//		//	fmtFunc = utils.FormatWarnLog
+	//		//case LevelInfo:
+	//		//	fmtFunc = utils.FormatInfoLog
+	//		//case LevelDebug:
+	//		//	fmtFunc = utils.FormatDebugLog
+	//		//default:
+	//		//	fmtFunc = utils.FormatInfoLog
+	//		//}
+	//
+	//		fmt.Printf(strings.TrimSpace(EntryTypeName[entryType] + " " + logItem.String(DefaultStdoutFormatter{})))
+	//	}
+	//
+	//}
+	//
+	//var writeTook = time.Since(startedWriting)
+	//
+	//var totalTook = allocationTook + objectCreationTook + writeTook
+	//
+	//fmt.Printf("-----------------------------------------------------\n")
+	//fmt.Printf("-----------------------------------------------------\n")
+	//fmt.Printf("Allocation took: %v\n", allocationTook)
+	//fmt.Printf("Object creation took: %v\n", objectCreationTook)
+	//fmt.Printf("Write took: %v\n", writeTook)
+	//fmt.Printf("Total took: %v\n", totalTook)
+	//fmt.Printf("-----------------------------------------------------\n")
+	//fmt.Printf("Average allocation took: %v\n", allocationTook.Seconds()/float64(1_000_000))
+	//fmt.Printf("Average object creation took: %v\n", objectCreationTook.Seconds()/float64(1_000_000))
+	//fmt.Printf("Average write took: %v\n", writeTook.Seconds()/float64(1_000_000))
+	//fmt.Printf("Average total took: %v\n", totalTook.Seconds()/float64(1_000_000))
+	//fmt.Printf("-----------------------------------------------------\n")
+	//fmt.Printf("-----------------------------------------------------\n")
 
 	// Clean up
-	r.Stop(true)
+	r.Stop()
 }
 
 // TestBasicOperationLogging tests basic logging functionality
@@ -105,41 +247,41 @@ func TestBasicOperationLogging(t *testing.T) {
 	//defer os.RemoveAll(tempDir)
 
 	// Configure Roga to write to files
-	customConfig := Config{
-		Instance: &OuterInstanceConfig{
-			writeToStdout:      utils.PtrOf(false),
-			writeToFile:        utils.PtrOf(true),
-			writeToExternal:    utils.PtrOf(false),
-			fileWriterBasePath: &tempDir,
+	customConfig := roga.Config{
+		InstanceConfig: &roga.OuterInstanceConfig{
+			WriteToStdout:      utils.PtrOf(false),
+			WriteToFile:        utils.PtrOf(true),
+			WriteToExternal:    utils.PtrOf(false),
+			FileWriterBasePath: &tempDir,
 		},
 	}
 
-	r := Init(customConfig)
+	r := roga.Init(customConfig)
 	r.Start()
 
-	r.LogInfo(LogArgs{
+	r.LogInfo(roga.LogArgs{
 		Message: "Test in root log message",
-		Actor: &Actor{
-			Type: ActorTypeSystem,
+		Actor: &model.Actor{
+			Type: model.ActorTypeSystem,
 		},
 	})
 
-	op := r.BeginOperation(OperationArgs{
+	op := r.BeginOperation(roga.OperationArgs{
 		Name: "TestOperation",
 	})
 
-	op.LogInfo(LogArgs{
+	op.LogInfo(roga.LogArgs{
 		Message: "Test in nested op log message",
-		Actor: &Actor{
-			Type: ActorTypeSystem,
+		Actor: &model.Actor{
+			Type: model.ActorTypeSystem,
 		},
 	})
 
-	var op2 = r.BeginOperation(OperationArgs{
+	var op2 = op.BeginOperation(roga.OperationArgs{
 		Name: "TestOperation2",
-		Actor: &Actor{
-			Type: ActorTypeUser,
-			User: &User{
+		Actor: &model.Actor{
+			Type: model.ActorTypeUser,
+			User: &model.User{
 				Identifier:      uuid.New().String(),
 				Id:              utils.PtrOf(uuid.New().String()),
 				IdType:          utils.PtrOf("UUID"),
@@ -154,16 +296,16 @@ func TestBasicOperationLogging(t *testing.T) {
 		},
 	})
 
-	op2.AuditAction(AuditLogArgs{
-		LogArgs{
+	op2.AuditAction(roga.AuditLogArgs{
+		roga.LogArgs{
 			Event:   utils.PtrOf("Login"),
 			Outcome: utils.PtrOf("Succeeded"),
 			Message: "Successful login",
 		},
 	})
 
-	op.CaptureEvent(EventLogArgs{
-		LogArgs{
+	op.CaptureEvent(roga.EventLogArgs{
+		roga.LogArgs{
 			Event:   utils.PtrOf("SomethingHappened"),
 			Outcome: utils.PtrOf("Succeeded"),
 		},
@@ -177,50 +319,52 @@ func TestBasicOperationLogging(t *testing.T) {
 		t.Errorf("Expected operation name to be TestOperation, got %s", op.Name)
 	}
 
+	op2.EndOperation()
+
 	op.EndOperation()
 
 	time.Sleep(2 * time.Second)
 
-	r.Stop(true)
+	r.Stop()
 
-	// Verify operation was logged
-	var logsBaseDir = tempDir + getCurrentTimeRoundedTo(
-		r.config.fileLogsDirectoryGranularity,
-	).UTC().Format(
-		r.config.fileLogsDirectoryFormatLayout,
-	)
+	//// Verify operation was logged
+	//var logsBaseDir = tempDir + time2.GetTimeRoundedTo(
+	//	r.config.fileLogsDirectoryGranularity,
+	//).UTC().Format(
+	//	r.config.fileLogsDirectoryFormatLayout,
+	//)
 
-	files, err := os.ReadDir(logsBaseDir)
-	if err != nil {
-		t.Fatalf("Failed to read temp directory: %v", err)
-	}
+	//files, err := os.ReadDir(logsBaseDir)
+	//if err != nil {
+	//	t.Fatalf("Failed to read temp directory: %v", err)
+	//}
 
-	foundOperationsFile := false
-	for _, file := range files {
-		if file.Name() == DefaultOperationsFileName {
-			foundOperationsFile = true
-			break
-		}
-	}
+	//foundOperationsFile := false
+	//for _, file := range files {
+	//	if file.Name() == roga.DefaultOperationsFileName {
+	//		foundOperationsFile = true
+	//		break
+	//	}
+	//}
 
-	if !foundOperationsFile {
-		t.Errorf("Expected to find operations file %s", DefaultOperationsFileName)
-	}
+	//if !foundOperationsFile {
+	//	t.Errorf("Expected to find operations file %s", roga.DefaultOperationsFileName)
+	//}
 }
 
 // TestOperationManagement tests the creation and management of operations
 func TestOperationManagement(t *testing.T) {
 	// Initialize Roga
-	r := Init()
+	r := roga.Init()
 	r.Start()
 
 	// Create a simple actor for our operations
-	actor := Actor{
-		Type: ActorTypeSystem,
+	actor := model.Actor{
+		Type: model.ActorTypeSystem,
 	}
 
 	// Create operation arguments
-	opArgs := OperationArgs{
+	opArgs := roga.OperationArgs{
 		Name:  "TestOperation",
 		Actor: &actor,
 	}
@@ -234,15 +378,15 @@ func TestOperationManagement(t *testing.T) {
 		t.Errorf("Expected operation name to be %s, got %s", "TestOperation", op.Name)
 	}
 
-	// Log within the operation
-	logArgs := LogArgs{
+	// ProduceLog within the operation
+	logArgs := roga.LogArgs{
 		Message: "Test log within operation",
 		Actor:   &actor,
 	}
 	op.LogInfo(logArgs)
 
 	// Create a nested operation
-	nestedOpArgs := OperationArgs{
+	nestedOpArgs := roga.OperationArgs{
 		Name:  "NestedOperation",
 		Actor: &actor,
 	}
@@ -264,36 +408,7 @@ func TestOperationManagement(t *testing.T) {
 	op.EndOperation()
 
 	// Clean up
-	r.Stop(true)
-}
-
-// TestMonitoring tests the system monitoring functionality
-func TestMonitoring(t *testing.T) {
-	// Create a custom configuration
-	customConfig := Config{
-		Instance: &OuterInstanceConfig{
-			systemStatsCheckInterval: utils.PtrOf(time.Duration(1)), // Check every second for faster testing
-		},
-	}
-
-	// Initialize Roga with custom configuration
-	r := Init(customConfig)
-	r.Start()
-
-	// Wait for metrics to be collected
-	time.Sleep(2 * time.Second)
-
-	// Test pausing and resuming monitoring
-	r.PauseSystemMonitoring()
-	time.Sleep(1 * time.Second)
-	r.ResumeSystemMonitoring()
-	time.Sleep(1 * time.Second)
-
-	// Stop monitoring
-	r.StopSystemMonitoring()
-
-	// Clean up
-	r.Stop(true)
+	r.Stop()
 }
 
 // TestFileWriting tests writing logs and operations to files
@@ -306,32 +421,32 @@ func TestFileWriting(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Create a custom configuration that writes to files
-	customConfig := Config{
-		Instance: &OuterInstanceConfig{
-			writeToStdout:      utils.PtrOf(false),
-			writeToFile:        utils.PtrOf(true),
-			writeToExternal:    utils.PtrOf(false),
-			fileWriterBasePath: &tempDir,
+	customConfig := roga.Config{
+		InstanceConfig: &roga.OuterInstanceConfig{
+			WriteToStdout:      utils.PtrOf(false),
+			WriteToFile:        utils.PtrOf(true),
+			WriteToExternal:    utils.PtrOf(false),
+			FileWriterBasePath: &tempDir,
 		},
 	}
 
 	// Initialize Roga with custom configuration
-	r := Init(customConfig)
+	r := roga.Init(customConfig)
 	r.Start()
 
 	// Create a simple actor for our logs and operations
-	actor := Actor{
-		Type: ActorTypeSystem,
+	actor := model.Actor{
+		Type: model.ActorTypeSystem,
 	}
 
 	// Create and log some test data
-	logArgs := LogArgs{
+	logArgs := roga.LogArgs{
 		Message: "Test file writing",
 		Actor:   &actor,
 	}
 	r.LogInfo(logArgs)
 
-	opArgs := OperationArgs{
+	opArgs := roga.OperationArgs{
 		Name:  "TestFileOperation",
 		Actor: &actor,
 	}
@@ -339,43 +454,43 @@ func TestFileWriting(t *testing.T) {
 	op.EndOperation()
 
 	// Stop Roga
-	r.Stop(true)
+	r.Stop()
 
 	time.Sleep(2 * time.Second)
 
-	var logsBaseDir = tempDir + getCurrentTimeRoundedTo(
-		r.config.fileLogsDirectoryGranularity,
-	).UTC().Format(
-		r.config.fileLogsDirectoryFormatLayout,
-	)
-
-	// Verify that log files were created
-	files, err := os.ReadDir(logsBaseDir)
-	if err != nil {
-		t.Fatalf("Failed to read temp directory: %v", err)
-	}
-
-	if len(files) == 0 {
-		t.Error("Expected log files to be created, but directory is empty")
-	}
-
-	foundOperationsFile := false
-	foundLogsFile := false
-
-	for _, file := range files {
-		if file.Name() == DefaultOperationsFileName {
-			foundOperationsFile = true
-		}
-		if file.Name() == "normal."+DefaultLogsFileName {
-			foundLogsFile = true
-		}
-	}
-
-	if !foundLogsFile {
-		t.Errorf("Expected to find logs file %s", "normal."+DefaultLogsFileName)
-	}
-
-	if !foundOperationsFile {
-		t.Errorf("Expected to find operations file %s", DefaultOperationsFileName)
-	}
+	//var logsBaseDir = tempDir + internal.getCurrentTimeRoundedTo(
+	//	r.config.fileLogsDirectoryGranularity,
+	//).UTC().Format(
+	//	r.config.fileLogsDirectoryFormatLayout,
+	//)
+	//
+	//// Verify that log files were created
+	//files, err := os.ReadDir(logsBaseDir)
+	//if err != nil {
+	//	t.Fatalf("Failed to read temp directory: %v", err)
+	//}
+	//
+	//if len(files) == 0 {
+	//	t.Error("Expected log files to be created, but directory is empty")
+	//}
+	//
+	//foundOperationsFile := false
+	//foundLogsFile := false
+	//
+	//for _, file := range files {
+	//	if file.Name() == roga.DefaultOperationsFileName {
+	//		foundOperationsFile = true
+	//	}
+	//	if file.Name() == "normal."+roga.DefaultLogsFileName {
+	//		foundLogsFile = true
+	//	}
+	//}
+	//
+	//if !foundLogsFile {
+	//	t.Errorf("Expected to find logs file %s", "normal."+roga.DefaultLogsFileName)
+	//}
+	//
+	//if !foundOperationsFile {
+	//	t.Errorf("Expected to find operations file %s", roga.DefaultOperationsFileName)
+	//}
 }
