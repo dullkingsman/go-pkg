@@ -2,6 +2,7 @@ package writer
 
 import (
 	"github.com/dullkingsman/go-pkg/roga/internal/queue"
+	"github.com/dullkingsman/go-pkg/roga/pkg/roga"
 	"github.com/dullkingsman/go-pkg/roga/writable"
 	"github.com/dullkingsman/go-pkg/utils"
 	"sync"
@@ -37,10 +38,15 @@ func NewQueuedWriter[T writable.Writable](
 
 			var value = item.String(formatter) + "\n"
 			_, err := writer.WriteString(value)
-
+			//putLogToPool(log)
 			if err != nil {
 				// TODO what to do
 				continue
+			}
+			if log, ok := any(item).(*roga.Log); ok {
+				//putLogToPool(log)
+				//
+				roga.PutLogFromPool(log)
 			}
 		}
 

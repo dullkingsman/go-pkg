@@ -8,6 +8,7 @@ import (
 	"github.com/dullkingsman/go-pkg/roga/writable"
 	"github.com/dullkingsman/go-pkg/utils"
 	"github.com/google/uuid"
+	"sync"
 	"time"
 )
 
@@ -27,6 +28,24 @@ type Log struct {
 	Actor          model.Actor            `json:"actor"`
 	SystemMetrics  model.SystemMetrics    `json:"systemMetrics"`
 	Data           map[string]interface{} `json:"data,omitempty"`
+}
+
+var logPool = sync.Pool{
+	New: func() interface{} {
+		return &Log{
+			Data: make(map[string]interface{}),
+		}
+	},
+}
+
+func getLogFromPool() *Log {
+	log := logPool.Get().(*Log)
+	log.Id = uuid.Nil
+	return log
+}
+
+func PutLogFromPool(log *Log) {
+	logPool.Put(log)
 }
 
 type (
@@ -130,7 +149,7 @@ func produceLog(
 	operation *Operation,
 	currentSystemMetrics *model.SystemMetrics,
 	framesToSkip int,
-	//ch chan<- writable.Writable,
+//ch chan<- writable.Writable,
 	q *queue.SelfConsumingQueue[writable.Writable],
 ) *Log {
 	var log = logArgs.ToLog()

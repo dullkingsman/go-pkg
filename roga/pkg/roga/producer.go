@@ -46,15 +46,25 @@ type EventLogArgs struct {
 }
 
 func (a LogArgs) ToLog() Log {
-	return Log{
-		Message:        a.Message,
-		Actor:          utils.ValueOr(a.Actor, model.Actor{}),
-		Data:           a.Data,
-		Event:          a.Event,
-		Outcome:        a.Outcome,
-		VerbosityClass: utils.ValueOr(a.VerbosityClass, 0),
-		Priority:       utils.ValueOr(a.Priority, 0),
-	}
+
+	log := getLogFromPool()
+	log.Message = a.Message
+	log.Actor = utils.ValueOr(a.Actor, model.Actor{})
+	log.Data = a.Data
+	log.Event = a.Event
+	log.Outcome = a.Outcome
+	log.VerbosityClass = utils.ValueOr(a.VerbosityClass, 0)
+	log.Priority = utils.ValueOr(a.Priority, 0)
+	//return Log{
+	//	Message:        a.Message,
+	//	Actor:          utils.ValueOr(a.Actor, model.Actor{}),
+	//	Data:           a.Data,
+	//	Event:          a.Event,
+	//	Outcome:        a.Outcome,
+	//	VerbosityClass: utils.ValueOr(a.VerbosityClass, 0),
+	//	Priority:       utils.ValueOr(a.Priority, 0),
+	//}
+	return *log
 }
 
 type OperationArgs struct {
