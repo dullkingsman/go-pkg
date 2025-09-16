@@ -132,7 +132,7 @@ func produceLog(
 	framesToSkip int,
 	//ch chan<- writable.Writable,
 	q *queue.SelfConsumingQueue[writable.Writable],
-	r *Roga,
+	fn func(item writable.Writable),
 ) *Log {
 	var log = logArgs.ToLog()
 
@@ -166,6 +166,7 @@ func produceLog(
 	//ch <- _log
 	//q.Enqueue(_log)
 
-	r.RogaZapWriter.WriteToFile(_log)
+	fn(_log)
+
 	return _log
 }

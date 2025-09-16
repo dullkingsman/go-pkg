@@ -95,7 +95,7 @@ func (o *Operation) LogFatal(args LogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
-		o.r,
+		o.r.dispatchWritableObject,
 	)
 
 	os.Exit(1)
@@ -112,7 +112,7 @@ func (o *Operation) LogError(args LogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
-		o.r,
+		o.r.dispatchWritableObject,
 	)
 }
 
@@ -127,7 +127,7 @@ func (o *Operation) LogWarn(args LogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
-		o.r,
+		o.r.dispatchWritableObject,
 	)
 }
 
@@ -142,7 +142,7 @@ func (o *Operation) LogInfo(args LogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
-		o.r,
+		o.r.dispatchWritableObject,
 	)
 }
 
@@ -157,7 +157,7 @@ func (o *Operation) LogDebug(args LogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
-		o.r,
+		o.r.dispatchWritableObject,
 	)
 }
 
@@ -172,7 +172,7 @@ func (o *Operation) AuditAction(args AuditLogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
-		o.r,
+		o.r.dispatchWritableObject,
 	)
 }
 
@@ -187,7 +187,7 @@ func (o *Operation) CaptureEvent(args EventLogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
-		o.r,
+		o.r.dispatchWritableObject,
 	)
 }
 

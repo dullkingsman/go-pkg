@@ -297,7 +297,7 @@ func (r *Roga) LogFatal(args LogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
-		r,
+		r.dispatchWritableObject,
 	)
 
 	os.Exit(1)
@@ -314,7 +314,7 @@ func (r *Roga) LogError(args LogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
-		r,
+		r.dispatchWritableObject,
 	)
 }
 
@@ -329,7 +329,7 @@ func (r *Roga) LogWarn(args LogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
-		r,
+		r.dispatchWritableObject,
 	)
 }
 
@@ -344,7 +344,7 @@ func (r *Roga) LogInfo(args LogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
-		r,
+		r.dispatchWritableObject,
 	)
 }
 
@@ -359,7 +359,7 @@ func (r *Roga) LogDebug(args LogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
-		r,
+		r.dispatchWritableObject,
 	)
 }
 
@@ -374,7 +374,7 @@ func (r *Roga) AuditAction(args AuditLogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
-		r,
+		r.dispatchWritableObject,
 	)
 }
 
@@ -389,7 +389,7 @@ func (r *Roga) CaptureEvent(args EventLogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
-		r,
+		r.dispatchWritableObject,
 	)
 }
 
