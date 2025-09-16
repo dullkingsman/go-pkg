@@ -3,6 +3,7 @@ package roga
 import (
 	"github.com/dullkingsman/go-pkg/roga/internal/_map"
 	time2 "github.com/dullkingsman/go-pkg/roga/internal/utils"
+	"log"
 	"time"
 )
 
@@ -85,6 +86,8 @@ func (ic InnerInstanceConfig) GetLogFileName(entryType EntryType) string {
 	case EntryTypeLog:
 		filePath += ic.logsFileName
 	}
+
+	log.Println("LogFileName: ", filePath)
 
 	return filePath
 }

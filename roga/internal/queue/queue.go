@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"fmt"
 	"log"
 	"sync"
 )
@@ -71,6 +72,7 @@ func (q *SelfConsumingQueue[T]) EnqueueMany(value []T) {
 }
 
 func (q *SelfConsumingQueue[T]) Stop() {
+	fmt.Println(q.stopped)
 	if q.stopped {
 		return
 	}
@@ -84,6 +86,7 @@ func (q *SelfConsumingQueue[T]) Stop() {
 	if q.wg != nil {
 		q.wg.Wait()
 	}
+
 }
 
 func (q *SelfConsumingQueue[T]) Flush() {
@@ -144,10 +147,15 @@ func (q *SelfConsumingQueue[T]) AddDependents(dependents ...*SelfConsumingQueue[
 }
 
 func (q *SelfConsumingQueue[T]) consume(fn func([]T)) {
-	defer func() {
-		log.Println("recovered from panic in queue consumer")
-		return
-	}()
+
+	//defer func() {
+	//	if r := recover(); r != nil {
+	//		log.Printf("recovered from panic in queue consumer: %v\n", r)
+	//		debug.PrintStack()
+	//	} else {
+	//		log.Println("recovered from panic in queue consumer")
+	//	}
+	//}()
 	for {
 		if q.stopped {
 			if breakout := q.handleStopped(fn); breakout {

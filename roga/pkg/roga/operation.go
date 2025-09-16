@@ -95,6 +95,7 @@ func (o *Operation) LogFatal(args LogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
+		o.r,
 	)
 
 	os.Exit(1)
@@ -111,6 +112,7 @@ func (o *Operation) LogError(args LogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
+		o.r,
 	)
 }
 
@@ -125,6 +127,7 @@ func (o *Operation) LogWarn(args LogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
+		o.r,
 	)
 }
 
@@ -139,6 +142,7 @@ func (o *Operation) LogInfo(args LogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
+		o.r,
 	)
 }
 
@@ -153,6 +157,7 @@ func (o *Operation) LogDebug(args LogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
+		o.r,
 	)
 }
 
@@ -167,6 +172,7 @@ func (o *Operation) AuditAction(args AuditLogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
+		o.r,
 	)
 }
 
@@ -181,6 +187,7 @@ func (o *Operation) CaptureEvent(args EventLogArgs) {
 		1,
 		//o.r.channels.operational.production,
 		o.r.productionQueue,
+		o.r,
 	)
 }
 
@@ -211,7 +218,7 @@ func beginOperation(
 	args OperationArgs,
 	parent *Operation,
 	context *model.Context,
-	//ch chan<- writable.Writable,
+//ch chan<- writable.Writable,
 	q *queue.SelfConsumingQueue[writable.Writable],
 	measurementInitiator ...MeasurementHandler,
 ) *Operation {
@@ -265,7 +272,7 @@ func beginOperation(
 func endOperation(
 	producer Producer,
 	operation *Operation,
-	//ch chan<- writable.Writable,
+//ch chan<- writable.Writable,
 	q *queue.SelfConsumingQueue[writable.Writable],
 	measurementFinalizer ...MeasurementHandler,
 ) {

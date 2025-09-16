@@ -40,7 +40,8 @@ func GetSystemSpecifications() SystemSpecifications {
 	swapSize, _, err := readSwapStats()
 
 	if err != nil {
-		log.Fatalf("failed to read swap stats: " + err.Error())
+
+		//log.Fatalf("failed to read swap stats: " + err.Error())
 	}
 
 	diskSize, _, err := GetDiskStats("/")

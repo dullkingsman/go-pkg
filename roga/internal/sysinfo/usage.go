@@ -35,18 +35,18 @@ func GetCPUUsage() (float64, error) {
 
 // GetMemoryStats retrieves total and free memory (Linux/macOS only)
 func GetMemoryStats() (total, free uint64, err error) {
-	var info syscall.Sysinfo_t
-
-	err = syscall.Sysinfo(&info)
-
-	if err != nil {
-		return 0, 0, err
-	}
-
-	total = info.Totalram * uint64(info.Unit)
-
-	free = info.Freeram * uint64(info.Unit)
-
+	//var info syscall.Sysinfo_t
+	//
+	//err = syscall.Sysinfo(&info)
+	//
+	//if err != nil {
+	//	return 0, 0, err
+	//}
+	//
+	//total = info.Totalram * uint64(info.Unit)
+	//
+	//free = info.Freeram * uint64(info.Unit)
+	//
 	return
 }
 

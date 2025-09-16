@@ -35,6 +35,7 @@ type Roga struct {
 	monitor              Monitor
 	writer               Writer
 	config               InnerInstanceConfig
+	RogaZapWriter        *ZapWriter
 }
 
 type (
@@ -89,6 +90,13 @@ func Init(cfg ...Config) Roga {
 
 	var instanceConfig = _cfg.InstanceConfig.Inner()
 
+	logFiles := []string{"normal", "audit", "events", "operations"}
+	zapWriter, err := NewZapWriter(instanceConfig.fileWriterBasePath, ".json", logFiles...)
+
+	if err != nil {
+		// Todo handle this
+	}
+
 	var r = Roga{
 		context:         model.DefaultContext,
 		config:          instanceConfig,
@@ -100,6 +108,7 @@ func Init(cfg ...Config) Roga {
 		producer:        _cfg.Producer,
 		monitor:         _cfg.Monitor,
 		writer:          _cfg.Writer,
+		RogaZapWriter:   zapWriter,
 		rootOperation: Operation{
 			Id:          uuid.New(),
 			Name:        "root",
@@ -190,45 +199,46 @@ func Init(cfg ...Config) Roga {
 		nil,
 	)
 
-	r.stdoutWriter = writer.NewQueuedWriter[writable.Writable](
-		func(currentWriter *writer.SyncedWriter) *writer.SyncedWriter {
-			if currentWriter == nil {
-				return writer.NewSyncedWriter(os.Stdout, 256*1024)
-			}
+	//r.stdoutWriter = writer.NewQueuedWriter[writable.Writable](
+	//	func(currentWriter *writer.SyncedWriter) *writer.SyncedWriter {
+	//		if currentWriter == nil {
+	//			return writer.NewSyncedWriter(os.Stdout, 256*1024)
+	//		}
+	//
+	//		return currentWriter
+	//	},
+	//	DefaultStdoutFormatter{},
+	//	DefaultStdoutWriterQueueSize,
+	//	[]*queue.SelfConsumingQueue[writable.Writable]{r.productionQueue},
+	//	nil,
+	//)
 
-			return currentWriter
-		},
-		DefaultStdoutFormatter{},
-		DefaultStdoutWriterQueueSize,
-		[]*queue.SelfConsumingQueue[writable.Writable]{r.productionQueue},
-		nil,
-	)
+	//r.fileWriter = writer.NewQueuedWriter[writable.Writable](
+	//	func(currentWriter *writer.SyncedWriter) *writer.SyncedWriter {
+	//		if currentWriter == nil {
+	//			//var _file, err = file.GetLogFileDescriptor(
+	//			//	r.config.GetFileWriterBasePath(),
+	//			//	r.config.GetCurrentLogDirName(),
+	//			//	r.config.GetLogFileName(EntryTypeLog),
+	//			//)
+	//			//
+	//			//if err != nil {
+	//			//	println(err.Error())
+	//			//}
+	//			//
+	//			//return writer.NewSyncedWriter(_file, 256*1024)
+	//			return nil
+	//		}
+	//
+	//		return currentWriter
+	//	},
+	//	DefaultStdoutFormatter{},
+	//	DefaultStdoutWriterQueueSize,
+	//	[]*queue.SelfConsumingQueue[writable.Writable]{r.productionQueue},
+	//	nil,
+	//)
 
-	r.fileWriter = writer.NewQueuedWriter[writable.Writable](
-		func(currentWriter *writer.SyncedWriter) *writer.SyncedWriter {
-			if currentWriter == nil {
-				var _file, err = file.GetLogFileDescriptor(
-					r.config.GetFileWriterBasePath(),
-					r.config.GetCurrentLogDirName(),
-					r.config.GetLogFileName(EntryTypeLog),
-				)
-
-				if err != nil {
-					println(err.Error())
-				}
-
-				return writer.NewSyncedWriter(_file, 256*1024)
-			}
-
-			return currentWriter
-		},
-		DefaultStdoutFormatter{},
-		DefaultStdoutWriterQueueSize,
-		[]*queue.SelfConsumingQueue[writable.Writable]{r.productionQueue},
-		nil,
-	)
-
-	r.productionQueue.AddDependents(r.stdoutWriter.GetQueue(), r.fileWriter.GetQueue())
+	//r.productionQueue.AddDependents(r.stdoutWriter.GetQueue(), r.fileWriter.GetQueue())
 
 	r.started = true
 
@@ -263,8 +273,8 @@ func (r *Roga) Stop() {
 
 		r.rootOperation.EndOperation()
 
-		r.fileWriter.GetQueue().Stop()
-		r.stdoutWriter.GetQueue().Stop()
+		//r.fileWriter.GetQueue().Stop()
+		//r.stdoutWriter.GetQueue().Stop()
 		r.productionQueue.Stop()
 		//r.stopConsuming()
 
@@ -287,6 +297,7 @@ func (r *Roga) LogFatal(args LogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
+		r,
 	)
 
 	os.Exit(1)
@@ -303,6 +314,7 @@ func (r *Roga) LogError(args LogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
+		r,
 	)
 }
 
@@ -317,6 +329,7 @@ func (r *Roga) LogWarn(args LogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
+		r,
 	)
 }
 
@@ -331,6 +344,7 @@ func (r *Roga) LogInfo(args LogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
+		r,
 	)
 }
 
@@ -345,6 +359,7 @@ func (r *Roga) LogDebug(args LogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
+		r,
 	)
 }
 
@@ -359,6 +374,7 @@ func (r *Roga) AuditAction(args AuditLogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
+		r,
 	)
 }
 
@@ -373,6 +389,7 @@ func (r *Roga) CaptureEvent(args EventLogArgs) {
 		1,
 		//r.channels.operational.production,
 		r.productionQueue,
+		r,
 	)
 }
 
@@ -573,21 +590,23 @@ func (r *Roga) flushStaleEntries() {
 }
 
 func (r *Roga) dispatchWritableObjects(items []writable.Writable) {
-	r.stdoutWriter.GetQueue().EnqueueMany(items)
-	r.fileWriter.GetQueue().EnqueueMany(items)
-
-	//for _, writable := range items {
-	//	r.dispatchWritableObject(writable)
-	//}
-}
-
-func (r *Roga) dispatchWritableObject(writable writable.Writable) {
 	if r.config.writeToStdout {
-		r.dispatchWritable(writable, WriteStreamStdout)
+		r.RogaZapWriter.WriteToStdout(items...)
 	}
 
 	if r.config.writeToFile {
-		r.dispatchWritable(writable, WriteStreamFile)
+		_ = r.RogaZapWriter.WriteToFile(items...)
+	}
+
+}
+
+func (r *Roga) dispatchWritableObject(item writable.Writable) {
+	if r.config.writeToFile {
+		_ = r.RogaZapWriter.WriteToFile(item)
+	}
+
+	if r.config.writeToStdout {
+		r.RogaZapWriter.WriteToStdout(item)
 	}
 }
 
